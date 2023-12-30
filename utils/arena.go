@@ -43,7 +43,6 @@ func (s *Arena) allocate(sz uint32) uint32 {
 		} else if grow < sz {
 			grow = sz
 		}
-
 		newBuf := make([]byte, len(s.buf)+int(grow))
 		AssertTrue(len(s.buf) == copy(newBuf, s.buf))
 		s.buf = newBuf

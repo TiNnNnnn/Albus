@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"unsafe"
 )
 
@@ -55,8 +56,18 @@ func test_slice() {
 	fmt.Println("new sl=", sl)
 }
 
+//go:linkname FastRand runtime.fastrand
+func FastRand() uint32
+
+func test_random() {
+	heightIncrease := math.MaxUint32 / 3
+	fmt.Println("heightIncrease=", heightIncrease)
+	fmt.Println("rand=", FastRand())
+}
+
 func main() {
 	//test()
 	//fmt.Printf("%d", sizeOfInt64(903432))
-	test_slice()
+	//test_slice()
+	test_random()
 }
