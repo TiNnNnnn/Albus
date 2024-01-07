@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"math"
 	"sync/atomic"
 )
@@ -77,6 +78,73 @@ func (s *SkipList) getRandomHeight() int {
 	return h
 }
 
+func (s *SkipList) Add(e *Entry) {
+	k, v := e.Key, ValueStruct{
+		Value:       e.Value,
+		ExpirationT: e.ExpirationT,
+	}
+	prev := s.findPrevNode(k)
+
+	height := s.getRandomHeight()
+	newnode := newNode(s.arena, k, v, height)
+
+	listHeight := s.getHeight()
+	for height > int(listHeight) {
+		if atomic.CompareAndSwapInt32(&s.height, listHeight, int32(height)) {
+			break
+		}
+		listHeight = s.getHeight()
+	}
+
+	for i := 0; i < height; i++ {
+		prevNode := s.arena.getNode(prev[i])
+		newnode.next[i] = prevNode.keyOffset
+		prevNode.next[i] = newnode.keyOffset
+	}
+}
+
+func (s *SkipList) Search() {
+
+}
+
+//知道指定节点的每一层前驱节点
+func (s *SkipList) findPrevNode(key []byte) []uint32 {
+
+	cur := s.getHead()
+
+	h := s.getHeight() - 1
+	prev := make([]uint32, h+1)
+
+	for level := int(h); level >= 0; {
+		nextNode := s.getNextNode(cur, level)
+		cmp := bytes.Compare(nextNode.key(s.arena), key)
+		if nextNode != nil && cmp < 0 {
+			cur = nextNode
+		} else if nextNode == nil || cmp >= 0 {
+			prev[level] = cur.keyOffset
+			level--
+		} else {
+
+		}
+	}
+	return prev
+}
+
+func (s *SkipList) isEmpty() bool {
+	return true
+}
+
+func (s *SkipList) findLast() *SkipList {
+	return nil
+}
+
+func (s *SkipList) findNear(key []byte, less bool, allowEqual bool) (*SkipListNode, bool) {
+	return nil, true
+}
+
+func (s *SkipList) getHeight() int32 {
+	return atomic.LoadInt32(&s.height)
+}
 
 //获取指定节点指定高度的下一个节点
 func (s *SkipList) getNextNode(node *SkipListNode, height int) *SkipListNode {
