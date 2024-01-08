@@ -20,13 +20,14 @@ type Arena struct {
 }
 
 // 创建一个新的Aerna对象
-func newAerna(n int64) *Arena {
-	newaerna := &Arena{
+func newArena(n int64) *Arena {
+	newarena := &Arena{
 		// 设定n=0时，为空指针
 		n:   1,
 		buf: make([]byte, n),
 	}
-	return newaerna
+	log.Printf("create new aerna success, size: %d", n)
+	return newarena
 }
 
 // 从arena中申请内存空间
@@ -56,7 +57,7 @@ func (s *Arena) allocate(sz uint32) uint32 {
 // args: skiplistnode节点的实际高度
 // return: 申请的空间的起始地址（内存对齐之后的值）
 func (s *Arena) addNode(height int) uint32 {
-	len := MAXNODESIZE - ((MAXNODESIZE - height) * OFFSETSIZE) + NODEALIGN
+	len := MAXNODESIZE - ((MAXHEIGHT - height) * OFFSETSIZE) + NODEALIGN
 	n := s.allocate(uint32(len))
 	alignN := (n + uint32(NODEALIGN)) & ^uint32(NODEALIGN)
 	return alignN

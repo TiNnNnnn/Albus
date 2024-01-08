@@ -9,7 +9,8 @@ type ValueStruct struct {
 	Value []byte
 	//过期时间
 	ExpirationT uint64
-	Meta        byte
+
+	Meta byte
 }
 
 // 获取vs编码后长度
@@ -53,10 +54,11 @@ type Entry struct {
 	Key         []byte
 	Value       []byte
 	ExpirationT uint64
+	Meta        byte
 }
 
 // 构建一个entry
-func NewEnry(key, value []byte) *Entry {
+func NewEntry(key, value []byte) *Entry {
 	return &Entry{
 		Key:   key,
 		Value: value,
