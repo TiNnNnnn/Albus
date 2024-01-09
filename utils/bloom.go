@@ -20,13 +20,13 @@ func (f *Filter) MayContain(h uint32) bool {
 	if len(f.table) < 2 {
 		return false
 	}
-	k := f.table[len(f.table)-1]
-	if k > 30 {
+	hashNum := f.table[len(f.table)-1]
+	if hashNum > 30 {
 		return true
 	}
 	nBits := uint32(8 * (len(f.table) - 1))
 	delta := h>>17 | h<<15
-	for j := uint8(0); j < k; j++ {
+	for j := uint8(0); j < hashNum; j++ {
 		bitPos := h % nBits
 		if f.table[bitPos/8]&(1<<(bitPos%8)) == 0 {
 			return false
@@ -48,6 +48,8 @@ func appendFilter(keys []uint32, bitsPerKey int) []byte {
 	if hashNum > 30 {
 		hashNum = 30
 	}
+
+	//计算filter维数组大小,确保最低64b
 	keyBits := len(keys) * bitsPerKey
 	if keyBits < 64 {
 		keyBits = 64
@@ -59,6 +61,7 @@ func appendFilter(keys []uint32, bitsPerKey int) []byte {
 	}
 
 	for _, h := range keys {
+		//delta:增量值，用于改变哈希值 ，模拟多哈希函数
 		delta := h>>17 | h<<15
 		for j := uint32(0); j < hashNum; j++ {
 			bitPos := h % uint32(keyBits)
@@ -101,12 +104,14 @@ func Hash(b []byte) uint32 {
 	switch len(b) {
 	case 3:
 		h += uint32(b[2]) << 16
+		//fallthroght 执行下一个case
 		fallthrough
 	case 2:
 		h += uint32(b[1]) << 8
 		fallthrough
 	case 1:
 		h += uint32(b[0])
+		h *= m
 		h ^= h >> 24
 	}
 	return h
