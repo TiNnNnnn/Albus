@@ -46,7 +46,7 @@ func test() {
 	fmt.Printf("NODEALIGN:  %d\n", NODEALIGN)
 }
 
-//验证切片的深浅拷贝问题
+// 验证切片的深浅拷贝问题
 func test_slice() {
 	var sl []int = make([]int, 5)
 	fmt.Println("sl=", sl)
@@ -64,6 +64,8 @@ func test_random() {
 	fmt.Println("heightIncrease=", heightIncrease)
 	fmt.Println("rand=", FastRand())
 }
+
+//find . -type f -name "*.go" -not -path "./vendor/*" -exec grep -v '^ *//' {} \; -exec grep -v '^ *$' {} \; | wc -l
 
 func main() {
 	//test()

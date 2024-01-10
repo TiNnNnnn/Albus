@@ -3,17 +3,78 @@ package utils
 import "math"
 
 type Filter struct {
-	table []byte
+	table   []byte
+	hashnum uint8
 }
 
-func newFilter(keys []uint32, bitsPerKey int) *Filter {
-	return &Filter{
-		table: appendFilter(keys, bitsPerKey),
+// 构建一个新bloomfilter
+// args: 元素个数 ， false positive
+func NewFilter(numEntries int, fp float64) *Filter {
+	bpk := BitsPerKey(numEntries, fp)
+	return initFilter(numEntries, bpk)
+}
+
+// 是否大概率存在
+func (f *Filter) MayContainKey(key []byte) bool {
+	return f.MayContain(Hash(key))
+}
+
+// 插入key
+func (f *Filter) InsertKey(key []byte) bool {
+	return f.Insert(Hash(key))
+}
+
+// 检查key是否存在，不存在则插入
+func (f *Filter) AllowKey(key []byte) bool {
+	if f == nil {
+		return true
+	}
+	isExist := f.MayContainKey(key)
+	if !isExist {
+		f.InsertKey(key)
+	}
+	return isExist
+}
+
+// 重置BloomFilter
+func (f *Filter) reset() {
+	if f == nil {
+		return
+	}
+	for i := range f.table {
+		f.table[i] = 0
 	}
 }
 
-func (f *Filter) MayContainKey(key []byte) bool {
-	return f.MayContain(Hash(key))
+func initFilter(numEntries int, bitsPerKey int) *Filter {
+	newfilter := &Filter{}
+	if bitsPerKey < 0 {
+		bitsPerKey = 0
+	}
+	//计算哈希函数个数
+	hashNum := uint32(float64(bitsPerKey) * 0.69)
+	if hashNum < 1 {
+		hashNum = 1
+	}
+	if hashNum > 30 {
+		hashNum = 30
+	}
+	newfilter.hashnum = uint8(hashNum)
+
+	//计算filter维数组大小,确保最低64b
+	keyBits := numEntries * bitsPerKey
+	if keyBits < 64 {
+		keyBits = 64
+	}
+	keyBytes := (keyBits + 7) / 8
+	//keyBits = keyBytes * 8
+
+	newtbitmap := make([]byte, keyBytes+1)
+	newtbitmap[keyBytes] = uint8(hashNum)
+
+	newfilter.table = newtbitmap
+	return newfilter
+
 }
 
 func (f *Filter) MayContain(h uint32) bool {
@@ -36,7 +97,44 @@ func (f *Filter) MayContain(h uint32) bool {
 	return true
 }
 
-func appendFilter(keys []uint32, bitsPerKey int) []byte {
+func (f *Filter) Insert(h uint32) bool {
+	hashNum := f.table[len(f.table)-1]
+	if hashNum > 30 {
+		return true
+	}
+	nBits := uint32(8 * (len(f.table) - 1))
+	delta := h>>17 | h<<15
+	for j := uint8(0); j < hashNum; j++ {
+		bitPos := h % nBits
+		f.table[bitPos/8] |= 1 << (bitPos % 8)
+		h += delta
+	}
+	return true
+}
+
+func (f *Filter) Allow(h uint32) bool {
+	if f == nil {
+		return true
+	}
+	isExist := f.MayContain(h)
+	if !isExist {
+		//不存在则插入key
+		f.Insert(h)
+	}
+	return isExist
+
+}
+
+func (f *Filter) Len() int32 {
+	return int32(len(f.table))
+}
+
+func newFilterByKeys(keys []uint32, bitsPerKey int) *Filter {
+	return appendFilter(keys, bitsPerKey)
+}
+
+func appendFilter(keys []uint32, bitsPerKey int) *Filter {
+	newfilter := &Filter{}
 	if bitsPerKey < 0 {
 		bitsPerKey = 0
 	}
@@ -48,6 +146,7 @@ func appendFilter(keys []uint32, bitsPerKey int) []byte {
 	if hashNum > 30 {
 		hashNum = 30
 	}
+	newfilter.hashnum = uint8(hashNum)
 
 	//计算filter维数组大小,确保最低64b
 	keyBits := len(keys) * bitsPerKey
@@ -56,21 +155,20 @@ func appendFilter(keys []uint32, bitsPerKey int) []byte {
 	}
 	keyBytes := (keyBits + 7) / 8
 	keyBits = keyBytes * 8
-	filter := &Filter{
-		table: make([]byte, keyBytes+1),
-	}
+	table := make([]byte, keyBytes+1)
 
 	for _, h := range keys {
 		//delta:增量值，用于改变哈希值 ，模拟多哈希函数
 		delta := h>>17 | h<<15
 		for j := uint32(0); j < hashNum; j++ {
 			bitPos := h % uint32(keyBits)
-			filter.table[bitPos/8] |= 1 << (bitPos % 8)
+			table[bitPos/8] |= 1 << (bitPos % 8)
 			h += delta
 		}
 	}
-	filter.table[keyBytes] = uint8(hashNum)
-	return filter.table
+	table[keyBytes] = uint8(hashNum)
+	newfilter.table = table
+	return newfilter
 }
 
 // 计算m/n

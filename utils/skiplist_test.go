@@ -80,7 +80,7 @@ func TestConcurrentBasic(t *testing.T) {
 			v := l.Search(key(i))
 			require.EqualValues(t, key(i), v.Value)
 			return
-			require.Nil(t, v)
+			//require.Nil(t, v)
 		}(i)
 	}
 	wg.Wait()
