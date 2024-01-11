@@ -79,7 +79,7 @@ func (slru *segmentedLRU) get(v *list.Element) {
 
 func (slru *segmentedLRU) victim() *storeItem {
 	if slru.TotalLen() <= slru.stOneCap+slru.stTwoCap {
-		//slru已满，无需淘汰
+		//slru未满，无需淘汰
 		return nil
 	} else {
 		//slru已满,从stage1中淘汰数据

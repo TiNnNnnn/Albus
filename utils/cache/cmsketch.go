@@ -36,7 +36,7 @@ func newCmSketch(numCounters int64) *CmSketch {
 		sketch.seed[i] = source.Uint64()
 		sketch.rows[i] = newCmdRow(numCounters)
 	}
-	return nil
+	return sketch
 }
 
 func (s *CmSketch) Increment(hashed uint64) {

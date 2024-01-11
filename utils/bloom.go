@@ -37,7 +37,7 @@ func (f *Filter) AllowKey(key []byte) bool {
 }
 
 // 重置BloomFilter
-func (f *Filter) reset() {
+func (f *Filter) Reset() {
 	if f == nil {
 		return
 	}
@@ -122,7 +122,6 @@ func (f *Filter) Allow(h uint32) bool {
 		f.Insert(h)
 	}
 	return isExist
-
 }
 
 func (f *Filter) Len() int32 {
