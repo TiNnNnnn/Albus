@@ -51,6 +51,22 @@ func mremap(data []byte, size int) ([]byte, error) {
 	return data, nil
 }
 
+func munmap(data []byte) error {
+	if len(data) == 0 || len(data) != cap(data) {
+		return unix.EINVAL
+	}
+	_, _, errno := unix.Syscall(
+		unix.SYS_MUNMAP,
+		uintptr(unsafe.Pointer(&data[0])),
+		uintptr(len(data)),
+		0,
+	)
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
 // 提供内存使用建议(user2os)
 func madvise(b []byte, readhead bool) error {
 	flags := unix.MADV_NORMAL
@@ -62,7 +78,7 @@ func madvise(b []byte, readhead bool) error {
 }
 
 // 将指定内存区域已修改数据希尔到磁盘
-func msyns(b []byte) error {
+func msync(b []byte) error {
 	//同步写入
 	return unix.Msync(b, unix.MS_SYNC)
 }
