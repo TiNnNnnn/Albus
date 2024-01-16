@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"bytes"
 	"fmt"
+	"hash/crc32"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -30,6 +32,18 @@ func GenSSTPath(dir string, id uint64) string {
 	return filepath.Join(dir, name)
 }
 
+// 比较key
+// 先比较key的数值内容，数值内容相等则比较时间戳
 func CompareKeys(k1, k2 []byte) int {
-	return 0
+	CondPanic((len(k1) <= 8 || len(k2) <= 8), fmt.Errorf("%s,%s less than 8", k1, k2))
+	if cmp := bytes.Compare(k1[:len(k1)-8], k2[:len(k2)-8]); cmp != 0 {
+		return cmp
+	}
+	return bytes.Compare(k1[len(k1)-8:], k2[len(k2)-8:])
 }
+
+// 计算数据的CRC32校验和
+func CalCheckSum(data []byte) uint64 {
+	return uint64(crc32.Checksum(data, CastagnoliCrcTable))
+}
+

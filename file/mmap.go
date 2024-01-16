@@ -102,6 +102,7 @@ func (mr *mmapReader) Read(buf []byte) (int, error) {
 	return n, nil
 }
 
+// 返回mmap内存映射区域[offset,offset+sz]
 func (m *MmapFile) Bytes(off, sz int) ([]byte, error) {
 	if len(m.Data[off:]) < sz {
 		return nil, io.EOF

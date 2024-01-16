@@ -10,7 +10,7 @@ import (
 // 负责对sst文件操作的封装
 type SSTable struct {
 	lock       *sync.RWMutex
-	file       *MmapFile
+	mmapfile   *MmapFile
 	maxKey     []byte
 	minKey     []byte
 	tableIndex *pb.TableIndex
@@ -24,9 +24,9 @@ func OpenSST(opt *Options) *SSTable {
 	mf, err := OpenMmapFile(opt.FileName, os.O_CREATE|os.O_RDWR, opt.MaxSize)
 	utils.Err(err)
 	return &SSTable{
-		file: mf,
-		fid:  opt.FID,
-		lock: &sync.RWMutex{},
+		mmapfile: mf,
+		fid:      opt.FID,
+		lock:     &sync.RWMutex{},
 	}
 }
 
@@ -38,3 +38,6 @@ func (ss *SSTable) initTable() (blockoffset *pb.BlockOffset, err error) {
 	return nil, nil
 }
 
+func (ss *SSTable) Bytes(off, sz int) ([]byte, error) {
+	return ss.mmapfile.Bytes(off, sz)
+}

@@ -16,6 +16,7 @@ type Options struct {
 	SSTableMaxSize     int64
 	BlockSize          int
 	BloomFalsePositive float64
+	
 }
 
 func NewLSM(opt *Options) *LSM {

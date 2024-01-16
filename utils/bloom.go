@@ -14,6 +14,10 @@ func NewFilter(numEntries int, fp float64) *Filter {
 	return initFilter(numEntries, bpk)
 }
 
+func (f *Filter) GetTable() []byte {
+	return f.table
+}
+
 // 是否大概率存在
 func (f *Filter) MayContainKey(key []byte) bool {
 	return f.MayContain(Hash(key))
@@ -128,7 +132,7 @@ func (f *Filter) Len() int32 {
 	return int32(len(f.table))
 }
 
-func newFilterByKeys(keys []uint32, bitsPerKey int) *Filter {
+func NewFilterByKeys(keys []uint32, bitsPerKey int) *Filter {
 	return appendFilter(keys, bitsPerKey)
 }
 

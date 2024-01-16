@@ -12,6 +12,7 @@ type table struct {
 	fid uint64
 }
 
+// mainfest中加载，落盘memtable
 func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table {
 	sst := file.OpenSST(&file.Options{
 		FileName: tableName,
@@ -24,6 +25,7 @@ func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table
 		lm:  lm,
 		fid: utils.GetFidByPath(tableName),
 	}
+	
 	if builder != nil {
 		if err := builder.flush(sst); err != nil {
 			utils.Err(err)
@@ -36,3 +38,10 @@ func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table
 	}
 	return t
 }
+
+// 从sstables中查找key
+func (t *table) Serach(key []byte, maxVs *uint64) (entry *utils.Entry, err error) {
+	return nil,nil 	
+}
+
+

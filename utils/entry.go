@@ -5,12 +5,12 @@ import (
 	"time"
 )
 
+// skiplist存储的value信息（only for skiplist）
 type ValueStruct struct {
 	Value []byte
 	//过期时间
 	ExpirationT uint64
-
-	Meta byte
+	Meta        byte
 }
 
 // 获取vs编码后长度
@@ -70,11 +70,11 @@ func (e *Entry) Entry() *Entry {
 	return e
 }
 
+// 根据ExpirtionT 判定entry是否合法
 func (e *Entry) IsUnValid() bool {
 	if e.Value == nil {
 		return true
 	}
-
 	// 如果 ExpirationT 不为 0 且大于当前时间的 Unix 时间戳，认为条目无效
 	if e.ExpirationT == 0 {
 		return false
@@ -97,4 +97,23 @@ func (e *Entry) EstimateSize(threshold int) int {
 	}
 	// 如果 Value 的长度大于等于阈值，返回键长、12（ValuePointer）和 Meta 的总和
 	return len(e.Key) + 12 + 1 // 12 for ValuePointer, 2 for meta.
+}
+
+// 获取entry序列化后长度（tips:只计算vlaue & expirationT）
+func (e *Entry) EncodeSize() uint32 {
+	valueSz := len(e.Value)
+	enc := sizeOfUint64(e.ExpirationT)
+	return uint32(valueSz + enc)
+}
+
+func (e *Entry) EncodeEntry(b []byte) uint32 {
+	size := binary.PutUvarint(b[:], e.ExpirationT)
+	valSz := copy(b[size:], e.Value)
+	return uint32(size + valSz)
+}
+
+func (e *Entry) DecodeEntry(b []byte) {
+	var size int
+	e.ExpirationT, size = binary.Uvarint(b)
+	e.Value = b[size:]
 }

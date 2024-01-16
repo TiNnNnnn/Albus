@@ -6,7 +6,7 @@ option go_package = "./;pb";
 //block_offset
 message BlockOffset{
     bytes key = 1;
-    bytes offset =2;
+    uint32 offset =2;
     uint32 len = 3;
 }
 //index_data

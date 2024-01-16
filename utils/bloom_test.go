@@ -32,7 +32,7 @@ func TestSmallBloomFilter(t *testing.T) {
 	for _, word := range wordList {
 		hash = append(hash, Hash(word))
 	}
-	f := newFilterByKeys(hash, 10)
+	f := NewFilterByKeys(hash, 10)
 	f2string := f.f2String()
 	wantstring := "1...1.........1.........1.....1...1...1.....1.........1.....1....11....."
 	if f2string != wantstring {
@@ -87,7 +87,7 @@ loop:
 		for _, key := range keys {
 			hashes = append(hashes, Hash(key))
 		}
-		f := newFilterByKeys(hashes, 10)
+		f := NewFilterByKeys(hashes, 10)
 
 		if len(f.table) > (length*10/8)+40 {
 			t.Errorf("length=%d: len(f)=%d is too large", length, len(f.table))
