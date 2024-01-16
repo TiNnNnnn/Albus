@@ -1,10 +1,11 @@
 package lsm
 
+import "albus/file"
+
 type tableBuilder struct {
 	sstSize  int64
 	curBlock *block
 	//opt      *Options
-
 }
 
 type buildDate struct {
@@ -29,4 +30,8 @@ type block struct {
 type header struct {
 	overlap uint64
 	diff    uint64
+}
+
+func (tb *tableBuilder) flush(sst *file.SSTable) error {
+	return nil
 }

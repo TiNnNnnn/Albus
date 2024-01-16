@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package pb;
+option go_package = "./;pb";
+
+//block_offset
+message BlockOffset{
+    bytes key = 1;
+    bytes offset =2;
+    uint32 len = 3;
+}
+//index_data
+message TableIndex{
+    repeated BlockOffset offsets = 1;
+    bytes bloomFilter = 2;
+    uint64 maxVersion = 3;
+    uint32 keyCount = 4;
+}

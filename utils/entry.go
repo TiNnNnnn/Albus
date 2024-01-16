@@ -75,7 +75,7 @@ func (e *Entry) IsUnValid() bool {
 		return true
 	}
 
-	// 如果 ExpirationT 不为 0 且小于等于当前时间的 Unix 时间戳，认为条目无效
+	// 如果 ExpirationT 不为 0 且大于当前时间的 Unix 时间戳，认为条目无效
 	if e.ExpirationT == 0 {
 		return false
 	}
