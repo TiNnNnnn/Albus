@@ -68,7 +68,7 @@ func newTableBuilder(opt *Options) *tableBuilder {
 	}
 }
 
-// 向memtable中写入entry
+// 向tableBuilder中写入entry
 func (tb *tableBuilder) add(e *utils.Entry) {
 	key := e.Key
 	if tb.checkBlockRemainCap(e) {
