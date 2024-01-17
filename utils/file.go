@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 // 通过文件路径获取文件id
@@ -47,3 +49,12 @@ func CalCheckSum(data []byte) uint64 {
 	return uint64(crc32.Checksum(data, CastagnoliCrcTable))
 }
 
+// 对比校验和
+func CompareCheckSum(data []byte, expected []byte) error {
+	actual := uint64(crc32.Checksum(data, CastagnoliCrcTable))
+	expectedU64 := BytesToU64(expected)
+	if actual != expectedU64 {
+		return errors.Wrapf(ErrChecksumMismatch, "actual:%d,expected:%d", actual, expectedU64)
+	}
+	return nil
+}

@@ -14,6 +14,7 @@ type table struct {
 
 // mainfest中加载，落盘memtable
 func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table {
+	//开辟一片新的mmap映射区
 	sst := file.OpenSST(&file.Options{
 		FileName: tableName,
 		Dir:      lm.opt.WorkerDir,
@@ -25,7 +26,7 @@ func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table
 		lm:  lm,
 		fid: utils.GetFidByPath(tableName),
 	}
-	
+
 	if builder != nil {
 		if err := builder.flush(sst); err != nil {
 			utils.Err(err)
@@ -41,7 +42,5 @@ func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table
 
 // 从sstables中查找key
 func (t *table) Serach(key []byte, maxVs *uint64) (entry *utils.Entry, err error) {
-	return nil,nil 	
+	return nil, nil
 }
-
-
