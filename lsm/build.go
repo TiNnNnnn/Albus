@@ -4,8 +4,11 @@ import (
 	"albus/file"
 	"albus/pb"
 	"albus/utils"
+	"bytes"
 	"fmt"
+	"io"
 	"math"
+	"sort"
 	"unsafe"
 
 	"google.golang.org/protobuf/proto"
@@ -264,7 +267,6 @@ func (tb *tableBuilder) buildIndex(bloom []byte) ([]byte, uint32) {
 	data, err := proto.Marshal(tableidx)
 	utils.Panic(err)
 	return data, dataSize
-
 }
 
 // 构建index_data中的block_offsets
@@ -288,4 +290,133 @@ func (tb *tableBuilder) writeBlockOffset(block *block, startOffset uint32) *pb.B
 		Offset: startOffset,
 	}
 	return offset
+}
+
+type blockIterator struct {
+	//block entry_data数据
+	data []byte
+	//迭代器当前位置
+	idx int
+	//err
+	err error
+	//basekey
+	baseKey      []byte
+	key          []byte
+	val          []byte
+	entryOffsets []uint32
+
+	block   *block
+	tableId uint64
+	blockId int
+
+	prevOverlap uint16
+	it          utils.Item
+}
+
+func (it *blockIterator) setBlock(b *block) {
+	it.block = b
+	it.err = nil
+	it.idx = 0
+	it.baseKey = b.baseKey[:0]
+	it.prevOverlap = 0
+	it.key = it.key[:0]
+	it.val = it.val[:0]
+	it.data = b.data[:b.entriesIdxStart]
+	it.entryOffsets = b.entryOffsets
+}
+
+func (it *blockIterator) seek(key []byte) {
+	it.err = nil
+	startidx := 0
+	//从entryOffsets中二分查找taget key
+	tagetEntryIdx := sort.Search(len(it.entryOffsets), func(idx int) bool {
+		if idx < startidx {
+			return false
+		}
+		//移动到idx位置
+		it.setIdx(idx)
+		//it.key>key: key在it.key左半部分或者当前位置
+		//it.key>key: key在it.key右半部分
+		return utils.CompareKeys(it.key, key) >= 0
+	})
+	it.setIdx(tagetEntryIdx)
+}
+
+func (it *blockIterator) setIdx(i int) {
+	defer func() {
+		//recover: 捕获并处理panic异常，只能在defer中使用
+		if r := recover(); r != nil {
+			var debugBuf bytes.Buffer
+			panic(debugBuf.String())
+		}
+	}()
+
+	it.idx = i
+	if i > len(it.entryOffsets) || i < 0 {
+		it.err = io.EOF
+		return
+	}
+	it.err = nil
+
+	//寻找当前block的startoffset和endoffset,从而
+	//反序列化出entry相关信息
+	startOffset := int(it.entryOffsets[i])
+
+	if len(it.baseKey) == 0 {
+		var baseHeader header
+		baseHeader.decodeHead(it.data)
+		headerSz := baseHeader.headerSize()
+		it.baseKey = it.data[headerSz : headerSz+baseHeader.diff]
+	}
+
+	var endOffset int
+	if it.idx+1 == len(it.entryOffsets) {
+		//当前是最后一个block
+		endOffset = len(it.data)
+	} else {
+		//当前不是最后一块
+		endOffset = int(it.entryOffsets[it.idx+1])
+	}
+
+	entryData := it.data[startOffset:endOffset]
+	var h header
+	h.decodeHead(entryData)
+	if h.overlap > it.prevOverlap {
+		it.key = append(it.key[:it.prevOverlap], it.baseKey[it.prevOverlap:h.overlap]...)
+	}
+
+	it.prevOverlap = h.overlap
+	valueOff := h.headerSize() + h.diff
+	diffKey := entryData[h.headerSize():valueOff]
+	it.key = append(it.key[:h.overlap], diffKey...)
+	e := utils.NewEntry(it.key, nil)
+	e.DecodeEntry(entryData[valueOff:])
+	it.it = &Item{
+		e: e,
+	}
+}
+
+func (it *blockIterator) Next() {
+	it.setIdx(it.idx + 1)
+}
+
+func (it *blockIterator) Rewind() bool {
+	it.setIdx(0)
+	return true
+}
+
+func (it *blockIterator) Item() utils.Item {
+	return it.it
+}
+
+func (it *blockIterator) Valid() bool {
+	return it.it == nil
+}
+
+func (it *blockIterator) Error() error {
+	return it.err
+}
+
+func (it *blockIterator) Close() error {
+	return nil
 }
