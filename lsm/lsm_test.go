@@ -1,6 +1,11 @@
 package lsm
 
-import "albus/utils"
+import (
+	"albus/utils"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 var (
 	// case
@@ -25,3 +30,10 @@ var (
 )
 
 
+
+func BaseTest(t *testing.T, lsm *LSM) {
+	entry, err := lsm.Get([]byte("hello7_12345678"))
+	assert.Nil(t, err)
+	assert.Equal(t, []byte("world7"), entry.Value)
+	t.Logf("Get key=%s, value=%s,expiresAt=%d", entry.Key, entry.Value, entry.ExpirationT)
+}

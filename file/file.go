@@ -10,6 +10,7 @@ type Options struct {
 	Flag     int
 	MaxSize  int
 }
+
 type AlbusFile interface {
 	Close() error
 	Truncature(n int64) error

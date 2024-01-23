@@ -21,6 +21,7 @@ func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table
 		Flag:     os.O_CREATE | os.O_RDWR,
 		MaxSize:  int(lm.opt.SSTableMaxSize),
 	})
+
 	t := &table{
 		sst: sst,
 		lm:  lm,
@@ -33,6 +34,7 @@ func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table
 			return nil
 		}
 	}
+	
 	if err := t.sst.Init(); err != nil {
 		utils.Err(err)
 		return nil
