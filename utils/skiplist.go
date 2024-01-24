@@ -390,6 +390,7 @@ func decodeValue(value uint64) (valOffset uint32, valSize uint32) {
 
 // skiplist占内存大小
 func (s *SkipList) MemSize() int64 {
+	//fmt.Printf(" memtable skiplist size: %d",s.arena.Size())
 	return s.arena.Size()
 }
 

@@ -37,7 +37,7 @@ var (
 // 错误日志格式化显示
 func Err(err error) error {
 	if err != nil {
-		fmt.Printf("%s %s", location(2, true), err)
+		fmt.Printf("%s %s\n", location(2, true), err)
 	}
 	return err
 }

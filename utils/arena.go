@@ -26,7 +26,7 @@ func newArena(n int64) *Arena {
 		n:   1,
 		buf: make([]byte, n),
 	}
-	log.Printf("create new aerna success, size: %d", n)
+	//log.Printf("create new aerna success, size: %d", n)
 	return newarena
 }
 

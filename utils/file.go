@@ -51,6 +51,7 @@ func CalCheckSum(data []byte) uint64 {
 
 // 对比校验和
 func CompareCheckSum(data []byte, expected []byte) error {
+	//log.Printf("exptected: %s", expected)
 	actual := uint64(crc32.Checksum(data, CastagnoliCrcTable))
 	expectedU64 := BytesToU64(expected)
 	if actual != expectedU64 {

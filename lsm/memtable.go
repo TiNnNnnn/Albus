@@ -5,9 +5,9 @@ import (
 	"albus/utils"
 	"bytes"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 
 	"github.com/pkg/errors"
 )
@@ -23,18 +23,19 @@ type memTable struct {
 const walFilExt string = ".wal"
 
 func (lsm *LSM) Newmemtable() *memTable {
-	fid := atomic.AddUint32(&lsm.maxMemFid, 1)
+	//fid := atomic.AddUint32(&lsm.maxMemFid, 1)
 	//设置wal fileX相关参数
-	fileOpt := &file.Options{
-		Dir:  lsm.option.WorkerDir,
-		Flag: os.O_CREATE | os.O_RDWR,
-		//wal file的上限大小
-		MaxSize:  int(lsm.option.MemTableSize),
-		FID:      fid,
-		FileName: memtableFIlePath(lsm.option.WorkerDir, fid),
-	}
+	// fileOpt := &file.Options{
+	// 	Dir:  lsm.option.WorkerDir,
+	// 	Flag: os.O_CREATE | os.O_RDWR,
+	// 	//wal file的上限大小
+	// 	MaxSize:  int(lsm.option.MemTableSize),
+	// 	FID:      fid,
+	// 	FileName: memtableFIlePath(lsm.option.WorkerDir, fid),
+	// }
 	return &memTable{
-		wal: file.OpenWalFile(fileOpt),
+		//wal: file.OpenWalFile(fileOpt),
+		wal: nil,
 		//skiplist:1MB
 		sl:  utils.NewSkipList(int64(1 << 20)),
 		lsm: lsm,
@@ -50,9 +51,9 @@ func memtableFIlePath(dir string, fid uint32) string {
 
 // 关闭wal文件
 func (m *memTable) close() error {
-	if err := m.wal.Close(); err != nil {
-		return err
-	}
+	// if err := m.wal.Close(); err != nil {
+	// 	return err
+	// }
 	return nil
 }
 
@@ -63,6 +64,7 @@ func (m *memTable) set(entry *utils.Entry) error {
 		return err
 	}
 	m.sl.Insert(entry)
+	log.Printf("insert entry [key: %s] to memtable success", entry.Key)
 	return nil
 }
 
@@ -80,7 +82,7 @@ func (m *memTable) Get(key []byte) (*utils.Entry, error) {
 
 // wal文件恢复
 func (lsm *LSM) recovery() (*memTable, []*memTable) {
-	return nil, nil
+	return lsm.Newmemtable(), nil
 }
 
 func (lsm *LSM) openMemTable(fid uint32) (*memTable, error) {

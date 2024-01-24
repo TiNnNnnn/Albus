@@ -29,9 +29,20 @@ var (
 	}
 )
 
+func TestLSMBase(t *testing.T) {
+	lsm := LSMSetTest()
+	LSMGETTest(t, lsm)
+}
 
+func LSMSetTest() *LSM {
+	lsm := NewLSM(opt)
+	for _, entry := range entrys {
+		lsm.Set(entry)
+	}
+	return lsm
+}
 
-func BaseTest(t *testing.T, lsm *LSM) {
+func LSMGETTest(t *testing.T, lsm *LSM) {
 	entry, err := lsm.Get([]byte("hello7_12345678"))
 	assert.Nil(t, err)
 	assert.Equal(t, []byte("world7"), entry.Value)

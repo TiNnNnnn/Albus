@@ -1,0 +1,4 @@
+*.log
+/work_test/
+*.swp
+./test_1.go

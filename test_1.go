@@ -65,11 +65,45 @@ func test_random() {
 	fmt.Println("rand=", FastRand())
 }
 
+// Entry 是一个示例结构体
+type Entry struct {
+	Key   string
+	Value int
+}
+
+// Item 接口定义
+type Item interface {
+	Entry() *Entry
+}
+
+// MyItem 是实现了 Item 接口的具体类型
+type MyItem struct {
+	Data Entry
+}
+
+// Entry 方法的实现
+func (mi *MyItem) Entry() *Entry {
+	return &mi.Data
+}
+
+func TestInterface() {
+	// 创建 MyItem 对象
+	myItem := &MyItem{Data: Entry{Key: "example", Value: 42}}
+
+	// 通过 Item 接口调用 Entry 方法
+	entry := myItem.Entry()
+
+	// 打印 Entry 对象的内容
+	fmt.Println("Key:", entry.Key)
+	fmt.Println("Value:", entry.Value)
+}
+
 //find . -type f -name "*.go" -not -path "./vendor/*" -exec grep -v '^ *//' {} \; -exec grep -v '^ *$' {} \; | wc -l
 
 func main() {
 	//test()
 	//fmt.Printf("%d", sizeOfInt64(903432))
 	//test_slice()
-	test_random()
+	//test_random()
+	TestInterface()
 }

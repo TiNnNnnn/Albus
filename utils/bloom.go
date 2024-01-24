@@ -18,6 +18,10 @@ func (f *Filter) GetTable() []byte {
 	return f.table
 }
 
+func (f *Filter) GetTablePtr() *[]byte {
+	return &(f.table)
+}
+
 // 是否大概率存在
 func (f *Filter) MayContainKey(key []byte) bool {
 	return f.MayContain(Hash(key))

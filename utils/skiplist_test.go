@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -53,6 +54,8 @@ func Benchmark_SkipListBasicCRUD(b *testing.B) {
 		list.Insert(entry)
 		searchVal := list.Search([]byte(key))
 		assert.Equal(b, searchVal.Value, []byte(val))
+
+		log.Printf("aerna size: %d",list.MemSize())
 	}
 }
 

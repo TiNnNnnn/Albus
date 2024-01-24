@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
 	"unsafe"
@@ -46,4 +47,11 @@ func MemHash(data []byte) uint64 {
 func MemHashString(str string) uint64 {
 	ss := (*stringStruct)(unsafe.Pointer(&str))
 	return uint64(memhash(ss.str, 0, uintptr(ss.len)))
+}
+
+func IsSameKey(src, dst []byte) bool {
+	if len(src) != len(dst) {
+		return false
+	}
+	return bytes.Equal(ParseKey(src), ParseKey(dst))
 }

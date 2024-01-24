@@ -10,7 +10,7 @@ type LSM struct {
 	//immutables: memtable list
 	immutables []*memTable
 	levels     *levelManager
-	option     *Options
+	option     *Options ``
 	closer     *utils.Closer
 	//最大memtable编号
 	maxMemFid uint32
@@ -36,6 +36,7 @@ func NewLSM(opt *Options) *LSM {
 	lsm.levels = newlevelManager(opt)
 	//初始化closer,用于资源回收信号控制
 	lsm.closer = utils.NewCloser(1)
+	log.Printf("new lsm success")
 	return lsm
 }
 
@@ -45,20 +46,23 @@ func (lsm *LSM) Set(entry *utils.Entry) (err error) {
 	if lsm.memTable.Size() > lsm.option.MemTableSize {
 		lsm.immutables = append(lsm.immutables, lsm.memTable)
 		lsm.memTable = lsm.Newmemtable()
+		log.Println("cur memtable has full, create new memtable,append cur mmetable into immutables")
 	}
-	//相比memtable中插入数据
+	//向memtable中插入数据
 	if err := lsm.memTable.set(entry); err != nil {
 		return err
 	}
+
 	//检查是否有immutable是否需要落盘
 	for _, immutable := range lsm.immutables {
 		if err := lsm.levels.flush(immutable); err != nil {
 			return err
 		}
 	}
+	
 	//释放immutable表
-	for i := 0; i < len(lsm.immutables); i++ {
-		lsm.immutables[i].close()
+	if len(lsm.immutables) != 0 {
+		lsm.immutables = make([]*memTable, 0)
 	}
 	return nil
 }

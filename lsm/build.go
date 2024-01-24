@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"sort"
 	"unsafe"
@@ -146,6 +147,7 @@ func (tb *tableBuilder) fillBlock() {
 	tb.pushBack(checkSum)
 	tb.pushBack(utils.U32ToBytes(uint32(len(checkSum))))
 
+	//将block加入到builder block_list中
 	tb.blockList = append(tb.blockList, tb.curBlock)
 	tb.keyCount += uint32(len(tb.curBlock.entryOffsets))
 }
@@ -208,6 +210,7 @@ func (tb *tableBuilder) flush(sst *file.SSTable) error {
 		return err
 	}
 	copy(dst, buf)
+	log.Printf("build flush ,buf：%v,writen: %d", dst, written)
 	return nil
 }
 
@@ -241,8 +244,10 @@ func (tb *tableBuilder) doneToDisk() buildDate {
 	}
 
 	index, dataSize := tb.buildIndex(newfilter.GetTable())
+	//log.Printf("index:%s,datasize:%d",index,dataSize)
 	//为索引区域计算crc32校验和
 	checkSum := tb.calCheckSum(index)
+	//log.Printf("done: checksum=%s", checkSum)
 	bd.idx = index
 	bd.checkSum = checkSum
 	bd.size = int(dataSize) + len(index) + len(checkSum) + 4 + 4
@@ -419,4 +424,8 @@ func (it *blockIterator) Error() error {
 
 func (it *blockIterator) Close() error {
 	return nil
+}
+
+func (b *block) compareCheckSum() error {
+	return utils.CompareCheckSum(b.data, b.checkSum)
 }

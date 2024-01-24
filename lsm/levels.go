@@ -167,6 +167,7 @@ func (lm *levelManager) buildManager() error {
 
 // 向L0层flush一个sstable
 func (lm *levelManager) flush(immutable *memTable) error {
+	log.Printf("immutables exist,begin flush data to sstable...")
 	//分配一个fid
 	nextId := atomic.AddUint64(&lm.maxFid, 1)
 	newSSTName := utils.GenSSTPath(lm.opt.WorkerDir, nextId)
@@ -178,7 +179,7 @@ func (lm *levelManager) flush(immutable *memTable) error {
 		entry := iter.Item().Entry()
 		builder.add(entry)
 	}
-	
+
 	//创建一个sstable对象
 	table := openTable(lm, newSSTName, builder)
 
@@ -186,5 +187,7 @@ func (lm *levelManager) flush(immutable *memTable) error {
 	//TODO:maifest
 
 	lm.levels[0].add(table)
+	immutable.close()
+
 	return nil
 }
