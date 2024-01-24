@@ -13,7 +13,9 @@ type blockbuffer struct {
 	b []byte
 }
 
-func newLsmCache(indexSz, blockSz int) *LsmCache {
+func newLsmCache(opt *Options) *LsmCache {
+	indexSz := 10
+	blockSz := 10
 	return &LsmCache{
 		indexCache: cache.NewCache(indexSz),
 		blockCache: cache.NewCache(blockSz),

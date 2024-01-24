@@ -96,6 +96,7 @@ func (mr *mmapReader) Read(buf []byte) (int, error) {
 	}
 	n := copy(buf, mr.Data[mr.offset:])
 	mr.offset += n
+	//复制的字节数小于buf.len,说明已经读完数据了
 	if n < len(buf) {
 		return n, io.EOF
 	}

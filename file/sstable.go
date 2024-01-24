@@ -5,7 +5,6 @@ import (
 	"albus/utils"
 	"errors"
 	"io"
-	"log"
 	"os"
 	"sync"
 
@@ -63,12 +62,12 @@ func (ss *SSTable) Init() error {
 func (ss *SSTable) initTable() (blockoffset *pb.BlockOffset, err error) {
 	//解析sst 索引区 （倒序解析）
 	pos := len(ss.mmapfile.Data)
-	log.Printf("init, mmap data: %v", ss.mmapfile.Data)
+	//log.Printf("init, mmap data: %v", ss.mmapfile.Data)
 	//读取checkSum len
 	pos -= 4
 	buf := ss.readWithCheck(pos, 4)
 	checksumLen := int(utils.BytesToU32(buf))
-	log.Printf("init, buf: %v,checkSum len %d", buf,checksumLen)
+	//log.Printf("init, buf: %v,checkSum len %d", buf, checksumLen)
 	if checksumLen < 0 {
 		return nil, errors.New("pasre checksum len from mmap error,len <0")
 	}
@@ -139,7 +138,7 @@ func (ss *SSTable) read(off int, sz int) ([]byte, error) {
 		if len(ss.mmapfile.Data[off:]) < sz {
 			return nil, io.EOF
 		}
-		log.Printf("read mmapfile success,[%d:%d],%s", off, off+sz, ss.mmapfile.Data[off:off+sz])
+		//log.Printf("read mmapfile success,[%d:%d],%s", off, off+sz, ss.mmapfile.Data[off:off+sz])
 		return ss.mmapfile.Data[off : off+sz], nil
 	}
 	//mmap为空，创建新的缓冲区，读取磁盘 【保底策略】

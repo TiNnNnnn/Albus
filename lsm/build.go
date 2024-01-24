@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"os"
 	"sort"
 	"unsafe"
 
@@ -150,6 +151,7 @@ func (tb *tableBuilder) fillBlock() {
 	//将block加入到builder block_list中
 	tb.blockList = append(tb.blockList, tb.curBlock)
 	tb.keyCount += uint32(len(tb.curBlock.entryOffsets))
+	tb.curBlock = nil
 }
 
 func (tb *tableBuilder) calCheckSum(data []byte) []byte {
@@ -198,20 +200,31 @@ func (h *header) decodeHead(buf []byte) {
 
 // TODO：可以优化拷贝次数
 // 将blocklist落盘为sstable
-func (tb *tableBuilder) flush(sst *file.SSTable) error {
+func (tb *tableBuilder) flush(lm *levelManager, tableName string) (t *table, err error) {
 	builddata := tb.doneToDisk()
+	t = &table{
+		lm:  lm,
+		fid: utils.GetFidByPath(tableName),
+	}
+	t.sst = file.OpenSST(&file.Options{
+		FileName: tableName,
+		Dir:      lm.opt.WorkerDir,
+		Flag:     os.O_CREATE | os.O_RDWR,
+		MaxSize:  int(builddata.size),
+	})
 	//创建一个buf,并将bd中所有数据拷贝进去
 	buf := make([]byte, builddata.size)
 	written := builddata.CopyData(buf)
 	utils.CondPanic(written != len(buf), fmt.Errorf("copydata from buildData failed"))
 	//拷贝数据到mmap内存映射区域
-	dst, err := sst.Bytes(0, builddata.size)
+	dst, err := t.sst.Bytes(0, builddata.size)
 	if err != nil {
-		return err
+		log.Printf("copy error,err:%v\n", err)
+		return nil, err
 	}
 	copy(dst, buf)
-	log.Printf("build flush ,buf：%v,writen: %d", dst, written)
-	return nil
+	//log.Printf("build flush ,buf：%v,writen: %d", dst, written)
+	return t, nil
 }
 
 // 将idx区域数据顺序写入临时切片
@@ -344,6 +357,7 @@ func (it *blockIterator) seek(key []byte) {
 		//it.key>key: key在it.key右半部分
 		return utils.CompareKeys(it.key, key) >= 0
 	})
+	//log.Printf("targetentryIdx,%d", tagetEntryIdx)
 	it.setIdx(tagetEntryIdx)
 }
 
@@ -357,7 +371,7 @@ func (it *blockIterator) setIdx(i int) {
 	}()
 
 	it.idx = i
-	if i > len(it.entryOffsets) || i < 0 {
+	if i >= len(it.entryOffsets) || i < 0 {
 		it.err = io.EOF
 		return
 	}
@@ -395,7 +409,10 @@ func (it *blockIterator) setIdx(i int) {
 	diffKey := entryData[h.headerSize():valueOff]
 	it.key = append(it.key[:h.overlap], diffKey...)
 	e := utils.NewEntry(it.key, nil)
+
 	e.DecodeEntry(entryData[valueOff:])
+
+	//log.Printf("build value: %s\n", e.Value)
 	it.it = &Item{
 		e: e,
 	}

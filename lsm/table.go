@@ -24,33 +24,41 @@ type table struct {
 // mainfest中加载，落盘memtable
 func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table {
 	//开辟一片新的mmap映射区
-	sst := file.OpenSST(&file.Options{
-		FileName: tableName,
-		Dir:      lm.opt.WorkerDir,
-		Flag:     os.O_CREATE | os.O_RDWR,
-		MaxSize:  int(lm.opt.SSTableMaxSize),
-	})
-
-	t := &table{
-		sst: sst,
-		lm:  lm,
-		fid: utils.GetFidByPath(tableName),
+	sstSize := int(lm.opt.SSTableMaxSize)
+	if builder != nil {
+		sstSize = int(builder.doneToDisk().size)
 	}
-	log.Printf("create sstable file,name:%s,fid:%d", tableName, t.fid)
-	b, _ := sst.Bytes(0, int(lm.opt.SSTableMaxSize))
-	log.Printf("new mmapfile:%v,len:%d", b, len(b))
+
+	var t *table
+	var err error
+
+	//log.Printf("create sstable file,name:%s,fid:%d", tableName, t.fid)
+	//b, _ := sst.Bytes(0, int(lm.opt.SSTableMaxSize))
+	//log.Printf("new mmapfile:%v,len:%d", b, len(b))
 
 	if builder != nil {
-		if err := builder.flush(sst); err != nil {
+		if t, err = builder.flush(lm, tableName); err != nil {
 			utils.Err(err)
 			return nil
 		}
+	} else {
+		sst := file.OpenSST(&file.Options{
+			FileName: tableName,
+			Dir:      lm.opt.WorkerDir,
+			Flag:     os.O_CREATE | os.O_RDWR,
+			MaxSize:  int(sstSize),
+		})
+		t = &table{
+			sst: sst,
+			lm:  lm,
+			fid: utils.GetFidByPath(tableName),
+		}
 	}
 
-	// if err := t.sst.Init(); err != nil {
-	// 	utils.Err(err)
-	// 	return nil
-	// }
+	if err := t.sst.Init(); err != nil {
+		utils.Err(err)
+		return nil
+	}
 	return t
 }
 
@@ -61,19 +69,23 @@ func (t *table) Serach(key []byte, maxVs *uint64) (entry *utils.Entry, err error
 	//检查key是否在当前block中
 	filter := &utils.Filter{}
 	*filter.GetTablePtr() = tableidx.BloomFilter
-
-	if t.sst.HasBloomFilter() && !filter.MayContainKey(key) {
+	if t.sst.HasBloomFilter() && !filter.MayContainKey(utils.ParseKey(key)) {
+		//log.Printf("no bloom\n")
 		return nil, utils.ErrKeyNotFound
 	}
-	iter := t.NewIterator(&utils.Options{})
+
+	iter := t.NewTableIterator(&utils.Options{})
 	defer iter.Close()
 
 	iter.Seek(key)
 	if iter.Valid() {
+		log.Printf("[table] seek failed")
 		return nil, utils.ErrKeyNotFound
 	}
 	if utils.IsSameKey(key, iter.Item().Entry().Key) {
 		if version := utils.ParseTimeFromKey(iter.Item().Entry().Key); *maxVs < version {
+			//log.Printf("table serach key:%s,paresekey:%s\n", key, utils.ParseKey(key))
+			//log.Printf("table value: %s\n", iter.Item().Entry().Value)
 			*maxVs = version
 			return iter.Item().Entry(), nil
 		}
@@ -90,7 +102,7 @@ type tableIterator struct {
 	err      error
 }
 
-func (t *table) NewIterator(options *utils.Options) utils.Iterator {
+func (t *table) NewTableIterator(options *utils.Options) utils.Iterator {
 	return &tableIterator{
 		opt: options,
 		t:   t,
@@ -183,6 +195,7 @@ func (t *table) getBlockFromSST(idx int) (*block, error) {
 	//对block data进行解析
 	readPos := len(b.data) - 4
 	b.checkLen = int(utils.BytesToU32(b.data[readPos : readPos+4]))
+
 	if b.checkLen > len(b.data) {
 		return nil, errors.Errorf("invalid checksum len,checkesum = %d", b.checkLen)
 	}

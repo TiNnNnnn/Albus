@@ -25,15 +25,28 @@ type levelHandler struct {
 	tables   []*table
 }
 
+func newlevelManager(opt *Options) *levelManager {
+	lm := &levelManager{}
+	lm.opt = opt
+	//读取manifast文件构建manager
+	if err := lm.loadManifest(); err != nil {
+		panic(err)
+	}
+	lm.buildManager()
+	return lm
+}
+
 func (lh *levelHandler) close() error {
 	return nil
 }
 
 func (lh *levelHandler) add(t *table) {
+	log.Printf("level_%d append new sst_%d", lh.levelNum, t.fid)
 	lh.tables = append(lh.tables, t)
 }
 
 func (lh *levelHandler) Get(key []byte) (*utils.Entry, error) {
+	//log.Printf("levelhandler level:%d\n", lh.levelNum)
 	if lh.levelNum == 0 {
 		//TODO ...
 		return lh.searchL0SST(key)
@@ -93,17 +106,6 @@ func (lh *levelHandler) getTable(key []byte) *table {
 	return nil
 }
 
-func newlevelManager(opt *Options) *levelManager {
-	lm := &levelManager{}
-	lm.opt = opt
-	//读取manifast文件构建manager
-	if err := lm.loadManifest(); err != nil {
-		panic(err)
-	}
-	lm.buildManager()
-	return lm
-}
-
 func (lm *levelManager) close() error {
 	if err := lm.cache.close(); err != nil {
 		log.Println("levelmanager close cache error,err:", err)
@@ -126,12 +128,12 @@ func (lm *levelManager) Get(key []byte) (*utils.Entry, error) {
 	var entry *utils.Entry
 	var err error
 	//查询LO层
-	if entry, err = lm.levels[0].Get(key); entry != nil {
+	if entry, err = lm.levels[0].Get(key); entry != nil && entry.Value != nil {
 		return entry, err
 	}
 	//查询L1+层
 	for level := 1; level < utils.MaxLevelNum; level++ {
-		if entry, err = lm.levels[level].Get(key); entry != nil {
+		if entry, err = lm.levels[level].Get(key); entry != nil && entry.Value != nil {
 			return entry, err
 		}
 	}
@@ -139,6 +141,14 @@ func (lm *levelManager) Get(key []byte) (*utils.Entry, error) {
 }
 
 func (lm *levelManager) loadCache() {
+	lm.cache = newLsmCache(lm.opt)
+	//初始化idxcache
+	//key:fid,value:table
+	for _, level := range lm.levels {
+		for _, table := range level.tables {
+			lm.cache.setIndex(table.sst.GetFid(), table)
+		}
+	}
 }
 
 func (lm *levelManager) loadManifest() error {

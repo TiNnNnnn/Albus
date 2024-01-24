@@ -10,7 +10,7 @@ type LSM struct {
 	//immutables: memtable list
 	immutables []*memTable
 	levels     *levelManager
-	option     *Options ``
+	option     *Options
 	closer     *utils.Closer
 	//最大memtable编号
 	maxMemFid uint32
@@ -46,12 +46,13 @@ func (lsm *LSM) Set(entry *utils.Entry) (err error) {
 	if lsm.memTable.Size() > lsm.option.MemTableSize {
 		lsm.immutables = append(lsm.immutables, lsm.memTable)
 		lsm.memTable = lsm.Newmemtable()
-		log.Println("cur memtable has full, create new memtable,append cur mmetable into immutables")
+		log.Printf("cur memtable has full, create new memtable,append cur mmetable into immutables,size: %d\n", lsm.memTable.Size())
 	}
 	//向memtable中插入数据
 	if err := lsm.memTable.set(entry); err != nil {
 		return err
 	}
+	//fmt.Printf("now memtable size:%d\n",lsm.memTable.Size())
 
 	//检查是否有immutable是否需要落盘
 	for _, immutable := range lsm.immutables {
@@ -59,7 +60,7 @@ func (lsm *LSM) Set(entry *utils.Entry) (err error) {
 			return err
 		}
 	}
-	
+
 	//释放immutable表
 	if len(lsm.immutables) != 0 {
 		lsm.immutables = make([]*memTable, 0)
@@ -92,11 +93,13 @@ func (lsm *LSM) Get(key []byte) (*utils.Entry, error) {
 	var entry *utils.Entry
 	var err error
 	//查询memtable，先查询内存活跃表，再查内存不变表
-	if entry, err = lsm.memTable.Get(key); entry != nil {
+	if entry, err = lsm.memTable.Get(key); entry != nil && entry.Value != nil {
+		log.Printf("[get entry from memtable success]\n")
 		return entry, err
 	}
-	for _, immutable := range lsm.immutables {
-		if entry, err := immutable.Get(key); entry != nil {
+	for i := len(lsm.immutables) - 1; i >= 0; i-- {
+		if entry, err := lsm.immutables[i].Get(key); entry != nil && entry.Value != nil {
+			log.Printf("[get entry from immutables success]\n")
 			return entry, err
 		}
 	}
