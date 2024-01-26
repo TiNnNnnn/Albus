@@ -42,6 +42,7 @@ func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table
 			return nil
 		}
 	} else {
+		//builder = nil,加载manifest到内存
 		sst := file.OpenSST(&file.Options{
 			FileName: tableName,
 			Dir:      lm.opt.WorkerDir,

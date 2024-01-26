@@ -117,3 +117,4 @@ func (lsm *LSM) StartMerge() {
 		//TODO:处理并发的合并过程
 	}
 }
+

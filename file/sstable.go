@@ -35,7 +35,7 @@ func OpenSST(opt *Options) *SSTable {
 	}
 }
 
-// Init 初始化 (磁盘-->内存)
+// Init 初始化 (sst index 磁盘-->内存)
 func (ss *SSTable) Init() error {
 	var blockOffset *pb.BlockOffset
 	var err error

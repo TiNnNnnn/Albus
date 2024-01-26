@@ -16,3 +16,20 @@ message TableIndex{
     uint64 maxVersion = 3;
     uint32 keyCount = 4;
 }
+
+message ManifestChangeSet{
+    repeated ManifestChange changes = 1;
+}
+
+//ManifestChange
+message ManifestChange{
+    enum Operation{
+        CREATE = 0;
+        DELETE = 1;
+    }
+    
+    uint64 Id = 1;
+    Operation Op = 2;
+    uint32 Level = 3;
+    bytes Checksum = 4;
+}

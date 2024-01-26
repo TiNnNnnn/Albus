@@ -11,7 +11,7 @@ var (
 	// case
 	entrys = []*utils.Entry{
 		{Key: []byte("hello0_12345678"), Value: []byte("world0"), ExpirationT: uint64(0)},
-		{Key: []byte("hello1_12345678"), Value: []byte("world11"), ExpirationT: uint64(0)},
+		{Key: []byte("hello1_12345678"), Value: []byte("world1"), ExpirationT: uint64(0)},
 		{Key: []byte("hello2_12345678"), Value: []byte("world2"), ExpirationT: uint64(0)},
 		{Key: []byte("hello3_12345678"), Value: []byte("world3"), ExpirationT: uint64(0)},
 		{Key: []byte("hello4_12345678"), Value: []byte("world4"), ExpirationT: uint64(0)},

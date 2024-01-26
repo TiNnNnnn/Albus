@@ -14,7 +14,7 @@ type levelManager struct {
 	maxFid       uint64
 	opt          *Options
 	cache        *LsmCache
-	manifestFile *file.MainfestFile
+	manifestFile *file.ManifestFile
 	levels       []*levelHandler
 }
 
@@ -152,7 +152,11 @@ func (lm *levelManager) loadCache() {
 }
 
 func (lm *levelManager) loadManifest() error {
-	return nil
+	var err error
+	lm.manifestFile, err = file.OpenManifestFile(&file.Options{
+		Dir: lm.opt.WorkerDir,
+	})
+	return err
 }
 
 func (lm *levelManager) buildManager() error {
@@ -164,9 +168,24 @@ func (lm *levelManager) buildManager() error {
 			tables:   make([]*table, 0),
 		})
 	}
-	//TODO:Manifest
 
+	//检测manifest文件的正确性,并进行统一
+	if err := lm.manifestFile.RevertToManifest(utils.LoadIdMap(lm.opt.WorkerDir)); err != nil {
+		return err
+	}
+
+	//构建level
 	var maxFid uint64
+	manifest := lm.manifestFile.GetManifest()
+	for fid, tableInfo := range manifest.Tables {
+		fileName := utils.GenSSTPath(lm.opt.WorkerDir, fid)
+		if fid > maxFid {
+			maxFid = fid
+		}
+		t := openTable(lm, fileName, nil)
+		lm.levels[tableInfo.Level].tables = append(lm.levels[tableInfo.Level].tables, t)
+	}
+	//对各层进行排序
 	for i := 0; i < utils.MaxLevelNum; i++ {
 		lm.levels[i].Sort()
 	}
@@ -189,14 +208,17 @@ func (lm *levelManager) flush(immutable *memTable) error {
 		entry := iter.Item().Entry()
 		builder.add(entry)
 	}
-
 	//创建一个sstable对象
 	table := openTable(lm, newSSTName, builder)
 
-	//更新manifest文件
-	//TODO:maifest
-
 	lm.levels[0].add(table)
+	//更新manifest文件
+	err := lm.manifestFile.AddTableMeta(0, &file.TableMeta{
+		Id:       nextId,
+		CheckSum: utils.MagicText[:],
+	})
+	utils.CondPanic(err != nil, err)
+	//flush成功之后，关闭immutable
 	immutable.close()
 
 	return nil
