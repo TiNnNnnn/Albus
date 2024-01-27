@@ -83,7 +83,7 @@ type mmapReader struct {
 	offset int
 }
 
-func (mr *mmapReader) NewReader(offset int) io.Reader {
+func (mr *MmapFile) NewReader(offset int) io.Reader {
 	return &mmapReader{
 		Data:   mr.Data,
 		offset: offset,
@@ -174,17 +174,40 @@ func (m *MmapFile) Close() error {
 	return m.Fd.Close()
 }
 
+// 对mmapfile进行截断到maxsize，同时将映射区调整到指定大小maxsize
 func (m *MmapFile) Truncature(maxSz int64) error {
+	if err := m.Sync(); err != nil {
+		return fmt.Errorf("while sync file: %s, error: %v\n", m.Fd.Name(), err)
+	}
+	if err := m.Fd.Truncate(maxSz); err != nil {
+		return fmt.Errorf("while truncate file: %s, error: %v\n", m.Fd.Name(), err)
+	}
+
 	var err error
-	if maxSz >= 0 {
-		if err = m.Fd.Truncate(maxSz); err != nil {
-			return fmt.Errorf("truncate file:%s error:%v", m.Fd.Name(), err)
+	m.Data, err = mmap.Mremap(m.Data, int(maxSz)) // Mmap up to max size.
+	return err
+}
+
+// 向mmap追加拷贝buf,不够则扩容mmap,重新映射
+func (m *MmapFile) Appendbuffer(offset uint32, buf []byte) error {
+	size := len(m.Data)
+	needSize := len(buf)
+	end := int(offset) + needSize
+	if end > size {
+		growBy := size
+		if growBy > 1<<30 {
+			growBy = 1 << 30
 		}
-		if maxSz > int64(len(m.Data)) {
-			m.Data, err = mmap.Mremap(m.Data, int(maxSz))
-			//TODO
-			return utils.Err(err)
+		if growBy < needSize {
+			growBy = needSize
 		}
+		if err := m.Truncature(int64(end)); err != nil {
+			return err
+		}
+	}
+	l := copy(m.Data[offset:end], buf)
+	if l != needSize {
+		return utils.ErrCopy
 	}
 	return nil
 }

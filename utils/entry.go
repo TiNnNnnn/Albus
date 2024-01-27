@@ -55,6 +55,11 @@ type Entry struct {
 	Value       []byte
 	ExpirationT uint64
 	Meta        byte
+
+	Version      uint64
+	Offset       uint32
+	Hlen         int
+	ValThreshold int64
 }
 
 // 构建一个entry

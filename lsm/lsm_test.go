@@ -29,9 +29,19 @@ var (
 	}
 )
 
+// 测试wal对lsm的恢复
+func TestRecoveryBase(t *testing.T) {
+	LSMSetTest()
+	test := func() {
+		lsm := NewLSM(opt)
+		LSMGetTest(t, lsm)
+	}
+	runTest(test, 1)
+}
+
 func TestLSMBase(t *testing.T) {
 	lsm := LSMSetTest()
-	LSMGETTest(t, lsm)
+	LSMGetTest(t, lsm)
 }
 
 func LSMSetTest() *LSM {
@@ -42,7 +52,7 @@ func LSMSetTest() *LSM {
 	return lsm
 }
 
-func LSMGETTest(t *testing.T, lsm *LSM) {
+func LSMGetTest(t *testing.T, lsm *LSM) {
 
 	for i := 0; i <= 7; i++ {
 		key := fmt.Sprintf("hello%d_12345678", i)
@@ -54,5 +64,11 @@ func LSMGETTest(t *testing.T, lsm *LSM) {
 		//assert.Nil(t, err)
 		//assert.Equal(t, []byte("world2"), entry.Value)
 		t.Logf("Get key=%s, value=%s,expiresAt=%d", entry.Key, entry.Value, entry.ExpirationT)
+	}
+}
+
+func runTest(test func(), n int) {
+	for i := 0; i < n; i++ {
+		test()
 	}
 }

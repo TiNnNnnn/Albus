@@ -14,7 +14,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// 通过文件路径获取文件id
+// 通过sst文件路径获取文件id
 func GetFidByPath(name string) uint64 {
 	//get filename by file path
 	name = path.Base(name)
@@ -28,6 +28,21 @@ func GetFidByPath(name string) uint64 {
 		return 0
 	}
 	return uint64(id)
+}
+
+const walFilExt string = ".wal"
+
+func GetWalFidByName(name string) uint64 {
+	if !strings.HasSuffix(name, walFilExt) {
+		return 0
+	}
+	fsz := len(name)
+	fid, err := strconv.ParseInt(name[:fsz-len(walFilExt)], 10, 64)
+	if err != nil {
+		Panic(err)
+		return 0
+	}
+	return uint64(fid)
 }
 
 // 生成sst文件名

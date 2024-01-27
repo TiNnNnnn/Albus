@@ -32,6 +32,11 @@ var (
 	ErrBadChecksum = errors.New("bad check sum")
 	// ErrChecksumMismatch is returned at checksum mismatch.
 	ErrChecksumMismatch = errors.New("checksum mismatch")
+
+	ErrTruncate = errors.New("Do truncate")
+	ErrStop     = errors.New("Stop")
+
+	ErrCopy = errors.New("copy error")
 )
 
 // 错误日志格式化显示
@@ -76,4 +81,8 @@ func Panic(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func Panic2(_ interface{}, err error) {
+	Panic(err)
 }

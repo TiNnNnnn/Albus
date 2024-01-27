@@ -6,6 +6,7 @@ import (
 	"unsafe"
 )
 
+// TODO: kv分离
 type ValuePtr struct {
 }
 
@@ -55,5 +56,5 @@ func BytesToU32Slice(b []byte) []uint32 {
 	header.Len = len(b) / 4
 	header.Cap = header.Len
 	header.Data = uintptr(unsafe.Pointer(&b[0]))
-	return u32s 
+	return u32s
 }
