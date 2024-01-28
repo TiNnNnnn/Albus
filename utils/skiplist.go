@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"math"
@@ -184,7 +183,7 @@ func (s *SkipList) Search(key []byte) ValueStruct {
 		return ValueStruct{}
 	}
 	nextKey := s.arena.getKey(node.keyOffset, node.keySize)
-	if 0 != bytes.Compare(key, nextKey) { //后期需要更改
+	if 0 != CompareKeys(key, nextKey) { //后期需要更改
 		return ValueStruct{}
 	}
 	valueOffset, valueSize := node.getValueOffset()
@@ -204,7 +203,7 @@ func (s *SkipList) findposForLevel(key []byte, prev uint32, level int) (uint32, 
 			return prev, next
 		}
 		nextKey := nextNode.key(s.arena)
-		cmp := bytes.Compare(key, nextKey)
+		cmp := CompareKeys(key, nextKey)
 		if cmp == 0 {
 			return next, next
 		} else if cmp < 0 {
@@ -226,7 +225,7 @@ func (s *SkipList) findPrevNode(key []byte) []uint32 {
 
 	for level := int(h); level >= 0; {
 		nextNode := s.getNextNode(cur, level)
-		cmp := bytes.Compare(nextNode.key(s.arena), key)
+		cmp := CompareKeys(nextNode.key(s.arena), key)
 		if nextNode != nil && cmp < 0 {
 			cur = nextNode
 		} else if nextNode == nil || cmp >= 0 {
@@ -288,7 +287,7 @@ func (s *SkipList) findNear(key []byte, less bool, allowEqual bool) (*SkipListNo
 			return cur, false
 		}
 		nextKey := next.key(s.arena)
-		cmp := bytes.Compare(key, nextKey) //之后需要修改
+		cmp := CompareKeys(key, nextKey) //之后需要修改
 		if cmp > 0 {
 			//curkey<nextkey<key,向右走
 			cur = next
