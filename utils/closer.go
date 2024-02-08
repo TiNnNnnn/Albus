@@ -28,7 +28,6 @@ func (c *Closer) Close() {
 
 // sub waitgroup counter ，表示一个goroutinue finsih
 func (c *Closer) Done() {
-
 	c.wg.Done()
 }
 

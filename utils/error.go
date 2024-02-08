@@ -37,6 +37,8 @@ var (
 	ErrStop     = errors.New("Stop")
 
 	ErrCopy = errors.New("copy error")
+
+	ErrFillTables = errors.New("filltables error")
 )
 
 // 错误日志格式化显示

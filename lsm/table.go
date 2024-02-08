@@ -11,6 +11,8 @@ import (
 	"math"
 	"os"
 	"sort"
+	"sync/atomic"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -19,6 +21,7 @@ type table struct {
 	sst *file.SSTable
 	lm  *levelManager
 	fid uint64
+	ref int32
 }
 
 // mainfest中加载，落盘memtable
@@ -56,6 +59,8 @@ func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table
 		}
 	}
 
+	t.IncrRef()
+
 	if err := t.sst.Init(); err != nil {
 		utils.Err(err)
 		return nil
@@ -65,6 +70,9 @@ func openTable(lm *levelManager, tableName string, builder *tableBuilder) *table
 
 // 从sstables中查找key
 func (t *table) Serach(key []byte, maxVs *uint64) (entry *utils.Entry, err error) {
+	t.IncrRef()
+	defer t.DecrRef()
+
 	tableidx := t.sst.GetIndexs()
 
 	//检查key是否在当前block中
@@ -104,6 +112,7 @@ type tableIterator struct {
 }
 
 func (t *table) NewTableIterator(options *utils.Options) utils.Iterator {
+	t.IncrRef()
 	return &tableIterator{
 		opt: options,
 		t:   t,
@@ -128,7 +137,8 @@ func (it *tableIterator) Item() utils.Item {
 }
 
 func (it *tableIterator) Close() error {
-	return nil
+	it.bi.Close()
+	return it.t.DecrRef()
 }
 
 // 二分搜索block offsets
@@ -246,4 +256,45 @@ func (t *table) makeblockCacheKey(idx int) []byte {
 	binary.BigEndian.PutUint32(buf[:4], uint32(t.fid))
 	binary.BigEndian.PutUint32(buf[4:], uint32(idx))
 	return buf
+}
+
+func (t *table) Size() int64 {
+	return int64(t.sst.Size())
+}
+
+func (t *table) CreateAt() *time.Time {
+	return t.sst.GetCreateAt()
+}
+
+func (t *table) Delete() error {
+	return t.sst.Delete()
+}
+
+func (t *table) StaleDataSize() uint32 {
+	return t.sst.GetIndexs().StaleDataSize
+}
+func (t *table) DecrRef() error {
+	newRef := atomic.AddInt32(&t.ref, -1)
+	if newRef == 0 {
+		for i := 0; i < len(t.sst.GetIndexs().GetOffsets()); i++ {
+			t.lm.cache.blockCache.Del(t.makeblockCacheKey(i))
+		}
+		if err := t.Delete(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *table) IncrRef() {
+	atomic.AddInt32(&t.ref, 1)
+}
+
+func decrRdfs(tables []*table) error {
+	for _, table := range tables {
+		if err := table.DecrRef(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

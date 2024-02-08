@@ -24,6 +24,15 @@ type Options struct {
 	SSTableMaxSize     int64
 	BlockSize          int
 	BloomFalsePositive float64
+
+	NumCompactors int
+	BaseLevelSize int64
+	//level之间期望的size比例
+	LevelSizeMultiplier int
+	TableSizeMultiplier int
+	BaseTableSize       int64
+	NumLevelZeroTables  int
+	MaxLevelNum         int
 }
 
 func NewLSM(opt *Options) *LSM {
@@ -117,4 +126,3 @@ func (lsm *LSM) StartMerge() {
 		//TODO:处理并发的合并过程
 	}
 }
-

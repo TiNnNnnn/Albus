@@ -15,6 +15,7 @@ message TableIndex{
     bytes bloomFilter = 2;
     uint64 maxVersion = 3;
     uint32 keyCount = 4;
+    uint32 staleDataSize = 5;
 }
 
 message ManifestChangeSet{

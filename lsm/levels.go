@@ -16,13 +16,18 @@ type levelManager struct {
 	cache        *LsmCache
 	manifestFile *file.ManifestFile
 	levels       []*levelHandler
+	compactStatus *compactStatus
+	lsm *LSM
 }
 
 // 负责对levelNum层的sstables进行操作
 type levelHandler struct {
 	sync.RWMutex
-	levelNum int
-	tables   []*table
+	levelNum       int
+	tables         []*table
+	totalSize      int64
+	totalStaleSize int64
+	lm             *levelManager
 }
 
 func newlevelManager(opt *Options) *levelManager {
@@ -41,6 +46,8 @@ func (lh *levelHandler) close() error {
 }
 
 func (lh *levelHandler) add(t *table) {
+	lh.Lock()
+	defer lh.Unlock()
 	log.Printf("level_%d append new sst_%d", lh.levelNum, t.fid)
 	lh.tables = append(lh.tables, t)
 }
@@ -104,6 +111,27 @@ func (lh *levelHandler) getTable(key []byte) *table {
 		}
 	}
 	return nil
+}
+
+func (lh *levelHandler) getTotalSize() int64 {
+	lh.Lock()
+	defer lh.Unlock()
+	return lh.totalSize
+}
+
+func (lh *levelHandler) addBatch(ts []*table) {
+	lh.Lock()
+	defer lh.Unlock()
+	lh.tables = append(lh.tables, ts...)
+}
+func (lh *levelHandler) addSize(t *table) {
+	lh.totalSize += t.Size()
+	lh.totalStaleSize += int64(t.StaleDataSize())
+}
+
+func (lh *levelHandler) SubSize(t *table) {
+	lh.totalSize -= t.Size()
+	lh.totalStaleSize -= int64(t.StaleDataSize())
 }
 
 func (lm *levelManager) close() error {
@@ -174,6 +202,8 @@ func (lm *levelManager) buildManager() error {
 		return err
 	}
 
+	lm.cache = newLsmCache(lm.opt)
+
 	//构建level
 	var maxFid uint64
 	manifest := lm.manifestFile.GetManifest()
@@ -183,14 +213,19 @@ func (lm *levelManager) buildManager() error {
 			maxFid = fid
 		}
 		t := openTable(lm, fileName, nil)
-		lm.levels[tableInfo.Level].tables = append(lm.levels[tableInfo.Level].tables, t)
+		//lm.levels[tableInfo.Level].tables = append(lm.levels[tableInfo.Level].tables, t)
+
+		//将table加入levelmanage
+		lm.levels[tableInfo.Level].add(t)
+		//计算当前层的table总大小
+		lm.levels[tableInfo.Level].addSize(t)
 	}
 	//对各层进行排序
 	for i := 0; i < utils.MaxLevelNum; i++ {
 		lm.levels[i].Sort()
 	}
 	lm.maxFid = maxFid
-	lm.loadCache()
+	//lm.loadCache()
 	return nil
 }
 
@@ -222,4 +257,84 @@ func (lm *levelManager) flush(immutable *memTable) error {
 	immutable.close()
 
 	return nil
+}
+
+type levelHandlerRLocked struct{}
+
+// 查询keyRange范围下的tables
+func (lh *levelHandler) overlappingTables(_ levelHandlerRLocked, keyrange keyRange) (int, int) {
+	if len(keyrange.left) == 0 || len(keyrange.right) == 0 {
+		return 0, 0
+	}
+	left := sort.Search(len(lh.tables), func(i int) bool {
+		return utils.CompareKeys(keyrange.left, lh.tables[i].sst.GetMaxKey()) <= 0
+	})
+	right := sort.Search(len(lh.tables), func(i int) bool {
+		return utils.CompareKeys(keyrange.right, lh.tables[i].sst.GetMaxKey()) < 0
+	})
+	return left, right
+}
+
+// 用新tables替换旧的tables
+func (lh *levelHandler) replaceTables(toDel, toAdd []*table) error {
+	lh.Lock()
+	defer lh.Unlock()
+
+	toDelMap := make(map[uint64]struct{})
+	for _, t := range toDel {
+		toDelMap[t.fid] = struct{}{}
+	}
+
+	//遍历当前table,将不在待删除tableList中的保留下来
+	var newTables []*table
+	for _, t := range lh.tables {
+		_, found := toDelMap[t.fid]
+		if !found {
+			newTables = append(newTables, t)
+			continue
+		}
+		lh.SubSize(t)
+	}
+	//加入新的tabels
+	for _, t := range toAdd {
+		lh.addSize(t)
+		t.IncrRef()
+		newTables =
+			append(newTables, t)
+	}
+	//更新改成tables,并排序
+	lh.tables = newTables
+	sort.Slice(lh.tables, func(i, j int) bool {
+		return utils.CompareKeys(lh.tables[i].sst.GetMinKey(), lh.tables[j].sst.GetMinKey()) < 0
+	})
+
+	return decrRdfs(toDel)
+}
+
+func (lh *levelHandler) deleteTables(toDel []*table) error {
+	lh.Lock()
+	defer lh.Lock()
+
+	toDelMap := make(map[uint64]struct{})
+	for _, t := range toDel {
+		toDelMap[t.fid] = struct{}{}
+	}
+
+	var newTables []*table
+	for _, t := range lh.tables {
+		_, found := toDelMap[t.fid]
+		if !found {
+			newTables = append(newTables, t)
+			continue
+		}
+		lh.SubSize(t)
+	}
+	lh.tables = newTables
+	return decrRdfs(toDel)
+}
+
+func (lh *levelHandler) numTables() int {
+	lh.RLock()
+	defer lh.RUnlock()
+	return len(lh.tables)
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -22,6 +23,7 @@ type SSTable struct {
 	idxLen     int
 	idxStart   int
 	fid        uint32
+	createAt time.Time
 }
 
 // 打开一个sst文件
@@ -145,4 +147,22 @@ func (ss *SSTable) read(off int, sz int) ([]byte, error) {
 	res := make([]byte, sz)
 	_, err := ss.mmapfile.Fd.ReadAt(res, int64(off))
 	return res, err
+}
+
+func (ss *SSTable)Size()int64{
+	fileStatus,err := ss.mmapfile.Fd.Stat()
+	utils.Panic(err)
+	return fileStatus.Size()
+}
+
+func(ss *SSTable)GetCreateAt() *time.Time{
+	return &ss.createAt
+}
+
+func(ss *SSTable)Delete() error{
+	return ss.mmapfile.Delete()
+}
+
+func (ss *SSTable)Truncature(size int64) error{
+	return ss.mmapfile.Truncature(size)
 }
