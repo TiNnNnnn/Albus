@@ -37,6 +37,14 @@ func ParseTimeFromKey(key []byte) uint64 {
 	return math.MaxUint64 - binary.BigEndian.Uint64(key[len(key)-8:])
 }
 
+// 生成一个新的带时间戳的key
+func KeyWithTime(key []byte, ts uint64) []byte {
+	out := make([]byte, len(key)+8)
+	copy(out, key)
+	binary.BigEndian.PutUint64(out[len(key):], math.MaxUint64-ts)
+	return out
+}
+
 // 对字节数组进行哈希计算
 func MemHash(data []byte) uint64 {
 	ss := (*stringStruct)(unsafe.Pointer(&data))

@@ -39,6 +39,7 @@ var (
 	ErrCopy = errors.New("copy error")
 
 	ErrFillTables = errors.New("filltables error")
+	ErrLevelNum   = errors.New("level num error")
 )
 
 // 错误日志格式化显示

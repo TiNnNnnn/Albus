@@ -2,8 +2,11 @@ package lsm
 
 import (
 	"albus/utils"
+	"bytes"
 	"errors"
+	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"sort"
 	"sync"
@@ -42,6 +45,11 @@ type compactDef struct {
 
 	thisRange keyRange
 	nextRange keyRange
+	splits    []keyRange
+
+	thisSize int64
+
+	dropPrefixes [][]byte
 }
 
 type compactStatus struct {
@@ -196,8 +204,312 @@ func (lm *levelManager) run(id int, p comapactionPriority) bool {
 }
 
 func (lm *levelManager) doCompact(id int, p comapactionPriority) error {
-	
-	return nil
+	l := p.level
+	utils.CondPanic(l >= lm.opt.MaxLevelNum, utils.ErrFillTables)
+	if p.t.baseLevel == 0 {
+		p.t = lm.levelTargets()
+	}
+
+	//创建压缩计划
+	cd := compactDef{
+		compactorId:  id,
+		p:            p,
+		t:            p.t,
+		thisLevel:    lm.levels[l],
+		dropPrefixes: p.dropPrefixes,
+	}
+
+	if l == 0 {
+		cd.nextLevel = lm.levels[p.t.baseLevel]
+		if !lm.fillTablesL0(&cd) {
+			return utils.ErrFillTables
+		}
+	} else {
+		cd.nextLevel = cd.thisLevel
+		if !cd.thisLevel.isLastLevel() {
+			cd.nextLevel = lm.levels[l+1]
+		}
+		if !lm.fillTables(&cd) {
+			return utils.ErrFillTables
+		}
+	}
+	//完成合并工作，从合并状态中删除
+	//TODO:delete
+
+}
+
+func (lm *levelManager) fillTables(cd *compactDef) bool {
+	cd.lockLevels()
+	defer cd.unLockLevels()
+
+	tables := make([]*table, cd.thisLevel.numTables())
+	copy(tables, cd.thisLevel.tables)
+	if len(tables) == 0 {
+		return false
+	}
+	//当前层已经是最后一层，直接自压缩
+	if cd.thisLevel.isLastLevel() {
+		return lm.fillMaxLevelTables(tables, cd)
+	}
+	lm.sortByHeuristic(tables, cd)
+	//当前层不是最后一层，直接向thisLevel+1层压缩
+	for _, t := range tables {
+		cd.thisSize = t.Size()
+		cd.thisRange = getKeyRange()
+		//有冲突，该sst已经在压缩
+		if lm.compactStatus.overlapsWith(cd.thisLevel.levelNum, cd.thisRange) {
+			continue
+		}
+		//确定top sst
+		cd.top = []*table{t}
+		//确定bot sst
+		left, right := cd.nextLevel.overlappingTables(levelHandlerRLocked{}, cd.thisRange)
+		cd.bot = make([]*table, right-left)
+		copy(cd.bot, cd.nextLevel.tables[left:right])
+
+		if len(cd.bot) == 0 {
+			cd.bot = []*table{}
+			cd.nextRange = cd.thisRange
+			if !lm.compactStatus.compareAndAdd(thisAndNextLevelRLocked{}, *cd) {
+				continue
+			}
+			return true
+		} else {
+			cd.nextRange = getKeyRange(cd.bot...)
+			if lm.compactStatus.overlapsWith(cd.nextLevel.levelNum, cd.nextRange) {
+				continue
+			}
+			if !lm.compactStatus.compareAndAdd(thisAndNextLevelRLocked{}, *cd) {
+				continue
+			}
+		}
+	}
+	return false
+}
+
+// 启发式排序(From RocksDB): 优先压缩旧sst
+func (lm *levelManager) sortByHeuristic(tables []*table, cd *compactDef) {
+	if len(tables) == 0 || cd.nextLevel == nil {
+		return
+	}
+	//按照sst最大版本升序排序 （旧版本放前面）
+	sort.Slice(tables, func(i, j int) bool {
+		return tables[i].sst.GetIndexs().MaxVersion < tables[j].sst.GetIndexs().MaxVersion
+	})
+}
+
+// 先尝试L0到Lbase的压缩，失败则L0到L0压缩
+func (lm *levelManager) fillTablesL0(cd *compactDef) bool {
+	if ok := lm.fillTbalesL02Lbase(cd); ok {
+		return true
+	} else {
+		return lm.fillTablesL0T0L0(cd)
+	}
+}
+
+func (lm *levelManager) fillTbalesL02Lbase(cd *compactDef) bool {
+	if cd.nextLevel.levelNum == 0 {
+		utils.Panic(errors.New("fillTbalesL02Lbase error: nextLevel=0"))
+	}
+	//优先级低于1，不执行
+	if cd.p.adjusted > 0.0 && cd.p.adjusted < 1.0 {
+		return false
+	}
+	cd.lockLevels()
+	defer cd.unLockLevels()
+
+	top := cd.thisLevel.tables
+	if len(top) == 0 {
+		return false
+	}
+
+	var out []*table
+	var kr keyRange
+
+	for _, t := range top {
+		planKr := getKeyRange(t)
+		if kr.overlapsWith(planKr) {
+			out = append(out, t)
+			kr.extend(planKr)
+		} else {
+			break
+		}
+	}
+	cd.thisRange = getKeyRange(out...)
+	cd.top = out
+
+	left, right := cd.nextLevel.overlappingTables(levelHandlerRLocked{}, cd.thisRange)
+	cd.bot = make([]*table, right-left)
+	copy(cd.bot, cd.nextLevel.tables[left:right])
+
+	if len(cd.bot) == 0 {
+		//bot为空，则尝试向0层去压缩
+		cd.nextRange = cd.thisRange
+	} else {
+		cd.nextRange = getKeyRange(cd.bot...)
+	}
+	return lm.compactStatus.compareAndAdd(thisAndNextLevelRLocked{}, *cd)
+}
+
+func (lm *levelManager) fillTablesL0T0L0(cd *compactDef) bool {
+	if cd.compactorId != 0 {
+		//0号线程专门负责执行L02L0，避免L0到L0的资源竞争
+		return false
+	}
+	cd.nextLevel = lm.levels[0]
+	cd.nextRange = keyRange{}
+	cd.bot = nil
+
+	utils.CondPanic(cd.thisLevel.levelNum != 0, utils.ErrLevelNum)
+	utils.CondPanic(cd.nextLevel.levelNum != 0, utils.ErrLevelNum)
+
+	lm.levels[0].RLock()
+	defer lm.levels[0].RUnlock()
+
+	lm.compactStatus.Lock()
+	defer lm.compactStatus.Unlock()
+
+	top := cd.thisLevel.tables
+	var out []*table
+
+	now := time.Now()
+	for _, t := range top {
+		//sst文件大于预期fileSz两倍，说明压缩过
+		//L02L0的压缩，不对过大的sst压缩，避免性能抖动
+		if t.Size() >= 2*cd.t.fileSz[0] {
+			continue
+		}
+		//sst创建时间小于10s，不做处理
+		if now.Sub(*t.sst.GetCreateAt()) < 10*time.Second {
+			continue
+		}
+		//当前sst已经在压缩状态，跳过
+		if _, isCompacting := lm.compactStatus.tables[t.fid]; isCompacting {
+			continue
+		}
+		out = append(out, t)
+	}
+	//sst数量小于4,不进行压缩
+	if len(out) < 4 {
+		return false
+	}
+
+	cd.thisRange = infRange
+	cd.top = out
+
+	//该过程应该避免任何L02Lx的压缩合并
+	thisLevel := lm.compactStatus.levels[cd.thisLevel.levelNum]
+	thisLevel.ranges = append(thisLevel.ranges, infRange)
+	for _, t := range out {
+		lm.compactStatus.tables[t.fid] = struct{}{}
+	}
+	//L02L0最终压缩为一个文件
+	cd.t.fileSz[0] = math.MaxUint32
+	return true
+}
+
+// maxLevel的自压缩
+func (lm *levelManager) fillMaxLevelTables(tables []*table, cd *compactDef) bool {
+	sortedTables := make([]*table, len(tables))
+	copy(sortedTables, tables)
+	lm.sortByStaleDataSize(sortedTables, cd)
+
+	if len(sortedTables) > 0 && sortedTables[0].StaleDataSize() == 0 {
+		//无过期信息
+		return false
+	}
+	cd.bot = []*table{}
+	//收集sst函数
+	collectBotTables := func(t *table, needSz int64) {
+		tableSize := t.Size()
+		//二分查找目标table
+		j := sort.Search(len(tables), func(i int) bool {
+			return utils.CompareKeys(tables[i].sst.GetMinKey(), t.sst.GetMinKey()) >= 0
+		})
+		utils.CondPanic(tables[j].fid != t.fid, errors.New("fillMaxLevelTables err: tables[j].fid != t.fid"))
+		j++
+		//收集目标table之后的table，直到满足needSz
+		for j < len(tables) {
+			newT := tables[j]
+			tableSize += newT.Size()
+			if tableSize >= needSz {
+				break
+			}
+			cd.bot = append(cd.bot, newT)
+			cd.nextRange.extend(getKeyRange(newT))
+			j++
+		}
+	}
+
+	now := time.Now()
+	for _, t := range sortedTables {
+		//sst创建时间少于1h,不选择
+		if now.Sub(*t.CreateAt()) < time.Hour {
+			continue
+		}
+		//sst大小小于1MB，不选择
+		if t.StaleDataSize() < 10<<20 {
+			continue
+		}
+		cd.thisSize = t.Size()
+		cd.thisRange = getKeyRange(t)
+		//该sst正在压缩，跳过
+		if lm.compactStatus.overlapsWith(cd.thisLevel.levelNum, cd.thisRange) {
+			continue
+		}
+
+		cd.top = []*table{t}
+
+		needFileSize := cd.t.fileSz[cd.thisLevel.levelNum]
+		//sst大于我们的taget fileSz,满足压缩条件
+		if t.Size() >= needFileSize {
+			break
+		}
+		//tablsSize 少于我们的target fileSz,收集更多的sst进行压缩
+		collectBotTables(t, needFileSize)
+		if !lm.compactStatus.compareAndAdd(thisAndNextLevelRLocked{}, *cd) {
+			cd.bot = cd.bot[:0]
+			cd.nextRange = keyRange{}
+			continue
+		}
+		return true
+	}
+	if len(cd.top) == 0 {
+		return false
+	}
+	return lm.compactStatus.compareAndAdd(thisAndNextLevelRLocked{}, *cd)
+}
+
+func (lm *levelManager) sortByStaleDataSize(tables []*table, cd *compactDef) {
+	if len(tables) == 0 || cd.nextLevel == nil {
+		return
+	}
+	sort.Slice(tables, func(i, j int) bool {
+		return tables[i].StaleDataSize() > tables[j].StaleDataSize()
+	})
+
+}
+
+// 获取tableList的keyRange,即[minKey,maxKey]
+func getKeyRange(tables ...*table) keyRange {
+	if len(tables) == 0 {
+		return keyRange{}
+	}
+	minKey := tables[0].sst.GetMinKey()
+	maxKey := tables[0].sst.GetMaxKey()
+	for i := 1; i < len(tables); i++ {
+		if utils.CompareKeys(tables[i].sst.GetMinKey(), minKey) < 0 {
+			minKey = tables[i].sst.GetMinKey()
+		}
+		if utils.CompareKeys(tables[i].sst.GetMaxKey(), maxKey) > 0 {
+			maxKey = tables[i].sst.GetMaxKey()
+		}
+	}
+	//版本号降序排列
+	return keyRange{
+		left:  utils.KeyWithTime(utils.ParseKey(minKey), math.MaxUint64),
+		right: utils.KeyWithTime(utils.ParseKey(maxKey), 0),
+	}
 }
 
 func (lm *levelManager) levelTargets() targets {
@@ -230,15 +542,18 @@ func (lm *levelManager) levelTargets() targets {
 	tsz := lm.opt.BaseTableSize
 	for i := 0; i < len(lm.levels); i++ {
 		if i == 0 {
+			//L0层设置 memtable size为 fileSz
 			t.fileSz[i] = lm.opt.MemTableSize
 		} else if i <= t.baseLevel {
+			//小于等于 baseLevel，设置fileSz为 basetableSize
 			t.fileSz[i] = tsz
 		} else {
+			//大于baseLevel则依层不断增加，每次扩大tableSizeMutiplier倍
 			tsz *= int64(lm.opt.TableSizeMultiplier)
 			t.fileSz[i] = tsz
 		}
 	}
-
+	//找到最后一个空level作为目标level实现归并，减少写放大
 	for i := t.baseLevel + 1; i < len(lm.levels)-1; i++ {
 		if lm.levels[i].getTotalSize() > 0 {
 			break
@@ -248,6 +563,7 @@ func (lm *levelManager) levelTargets() targets {
 
 	b := t.baseLevel
 	lvl := lm.levels
+	//寻找断层（totalSize == 0），有则设其为baseLevel
 	if b < len(lvl)-1 && lvl[b].getTotalSize() == 0 &&
 		lvl[b+1].getTotalSize() < t.targetSz[b+1] {
 		t.baseLevel++
@@ -270,8 +586,125 @@ func (lsm *LSM) newCompactStatus() *compactStatus {
 	return cs
 }
 
+// 判断当前level的压缩计划(keyrange)是否与进行中压缩冲突 （for compactStatus）
+func (cs *compactStatus) overlapsWith(level int, this keyRange) bool {
+	cs.RLock()
+	defer cs.RUnlock()
+
+	thisLevel := cs.levels[level]
+	return thisLevel.overlapsWith(this)
+}
+
 func (cs *compactStatus) delSize(l int) int64 {
 	cs.RLock()
 	defer cs.RUnlock()
 	return cs.levels[l].delSize
+}
+
+type thisAndNextLevelRLocked struct{}
+
+func (cs *compactStatus) compareAndAdd(_ thisAndNextLevelRLocked, cd compactDef) bool {
+	cs.Lock()
+	defer cs.Unlock()
+
+	tl := cd.thisLevel.levelNum
+	utils.CondPanic(tl >= len(cs.levels), utils.ErrLevelNum)
+	thisLevel := cs.levels[cd.thisLevel.levelNum]
+	nextLevel := cs.levels[cd.nextLevel.levelNum]
+	//如果当前压缩计划与同一层压缩计划冲突，则暂停
+	if thisLevel.overlapsWith(cd.thisRange) {
+		return false
+	}
+	if nextLevel.overlapsWith(cd.nextRange) {
+		return false
+	}
+	//设置range为压缩状态
+	thisLevel.ranges = append(thisLevel.ranges, cd.thisRange)
+	nextLevel.ranges = append(nextLevel.ranges, cd.nextRange)
+	thisLevel.delSize += cd.thisSize
+
+	//将压缩状态的sst加入cs中保存
+	for _, t := range append(cd.top, cd.bot...) {
+		cs.tables[t.fid] = struct{}{}
+	}
+	return true
+}
+
+// 判断当前level的压缩计划是否与进行中压缩冲突
+func (lcs *levelCompactStatus) overlapsWith(dst keyRange) bool {
+	for _, kr := range lcs.ranges {
+		if kr.overlapsWith(dst) {
+			return true
+		}
+	}
+	return false
+}
+
+func (kr *keyRange) isEmpty() bool {
+	return len(kr.left) == 0 && len(kr.right) == 0 && !kr.inf
+}
+
+var infRange = keyRange{
+	inf: true,
+}
+
+func (r keyRange) String() string {
+	return fmt.Sprintf("[left=%x,right=%x,inf=%v]", r.left, r.right, r.inf)
+}
+
+func (r keyRange) equals(dst keyRange) bool {
+	return bytes.Equal(r.left, dst.left) && bytes.Equal(r.right, dst.right) && r.inf == dst.inf
+}
+
+// 将区间r 和 kr 进行合并
+// example
+// r:	  [------------]
+// kr:          [-------------]
+// extend；[------------------]
+func (r *keyRange) extend(kr keyRange) {
+	if kr.isEmpty() {
+		return
+	}
+	if r.isEmpty() {
+		*r = kr
+	}
+	if len(r.left) == 0 || utils.CompareKeys(kr.left, r.left) < 0 {
+		r.left = kr.right
+	}
+	if len(r.right) == 0 || utils.CompareKeys(kr.right, r.right) > 0 {
+		r.right = kr.right
+	}
+	if kr.inf {
+		r.inf = true
+	}
+}
+
+func (r *keyRange) overlapsWith(dst keyRange) bool {
+	if r.isEmpty() {
+		return true
+	}
+	if dst.isEmpty() {
+		return true
+	}
+	//当keyRnage.inf设置为true,表示对整层加范围锁
+	if r.inf || dst.inf {
+		return true
+	}
+	if utils.CompareKeys(r.left, dst.right) > 0 {
+		return false
+	}
+	if utils.CompareKeys(r.right, dst.left) < 0 {
+		return false
+	}
+	return true
+}
+
+func (cd *compactDef) lockLevels() {
+	cd.thisLevel.RLock()
+	cd.nextLevel.RLock()
+}
+
+func (cd *compactDef) unLockLevels() {
+	cd.thisLevel.Unlock()
+	cd.nextLevel.Unlock()
 }

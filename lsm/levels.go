@@ -11,13 +11,13 @@ import (
 )
 
 type levelManager struct {
-	maxFid       uint64
-	opt          *Options
-	cache        *LsmCache
-	manifestFile *file.ManifestFile
-	levels       []*levelHandler
+	maxFid        uint64
+	opt           *Options
+	cache         *LsmCache
+	manifestFile  *file.ManifestFile
+	levels        []*levelHandler
 	compactStatus *compactStatus
-	lsm *LSM
+	lsm           *LSM
 }
 
 // 负责对levelNum层的sstables进行操作
@@ -337,4 +337,8 @@ func (lh *levelHandler) numTables() int {
 	lh.RLock()
 	defer lh.RUnlock()
 	return len(lh.tables)
+}
+
+func (lh *levelHandler) isLastLevel() bool {
+	return lh.levelNum == lh.lm.opt.MaxLevelNum-1
 }
