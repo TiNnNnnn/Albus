@@ -33,6 +33,7 @@ type targets struct {
 	fileSz    []int64
 }
 
+// 执行计划定义
 type compactDef struct {
 	compactorId int
 	t           targets
@@ -70,6 +71,7 @@ type keyRange struct {
 	size  int64
 }
 
+// 触发一个compact任务
 func (lm *levelManager) runCompact(id int) {
 	defer lm.lsm.closer.Done()
 	//创建随机时延
@@ -103,7 +105,7 @@ func (lm *levelManager) runOnce(id int) bool {
 	}
 	for _, p := range priors {
 		if id == 0 && p.level == 0 {
-			//L0层必须处理
+			//L0层不考虑得分 必须处理
 		} else if p.adjusted < 1.0 {
 			//其他level得分小于1.0，不做不处理
 			break
@@ -227,6 +229,7 @@ func (lm *levelManager) doCompact(id int, p comapactionPriority) error {
 	} else {
 		cd.nextLevel = cd.thisLevel
 		if !cd.thisLevel.isLastLevel() {
+			//指定下一层为到达层
 			cd.nextLevel = lm.levels[l+1]
 		}
 		if !lm.fillTables(&cd) {
@@ -234,7 +237,16 @@ func (lm *levelManager) doCompact(id int, p comapactionPriority) error {
 		}
 	}
 	//完成合并工作，从合并状态中删除
-	//TODO:delete
+	defer lm.compactStatus.delete(cd)
+
+	//执行合并计划
+	if err := lm.runCompactDef(id, l, cd); err != nil {
+		log.Printf("[Compactor: %d] LOG Compact FAILED with error: %+v: %+v", id, err, cd)
+		return err
+	}
+
+	log.Printf("[Compactor: %d] Compaction for level: %d DONE", id, cd.thisLevel.levelNum)
+	return nil
 
 }
 
@@ -490,6 +502,27 @@ func (lm *levelManager) sortByStaleDataSize(tables []*table, cd *compactDef) {
 
 }
 
+func (lm *levelManager) runCompactDef(id, l int, cd compactDef) (err error) {
+	if len(cd.t.fileSz) == 0 {
+		return errors.New("Filesizes cannot be zero. Targets are not set")
+	}
+	timeStart := time.Now()
+
+	thisLevel := cd.thisLevel
+	nextLevel := cd.nextLevel
+
+	utils.CondPanic(len(cd.splits) != 0, errors.New("len(cd.splits) != 0"))
+	if thisLevel == nextLevel {
+		//l02l0,lmax2lmax 不进行处理
+	} else {
+
+	}
+	if len(cd.splits) == 0 {
+		cd.splits = append(cd.splits, keyRange{})
+	}
+	return nil
+}
+
 // 获取tableList的keyRange,即[minKey,maxKey]
 func getKeyRange(tables ...*table) keyRange {
 	if len(tables) == 0 {
@@ -520,14 +553,12 @@ func (lm *levelManager) levelTargets() targets {
 		}
 		return sz
 	}
-
 	//初始化默认都是最大层数
-	//targetSz: Lx层预期sst总字节数
-	//fileSz: Lx层预期sst文件大小
 	t := targets{
-		targetSz: make([]int64, len(lm.levels)),
-		fileSz:   make([]int64, len(lm.levels)),
+		targetSz: make([]int64, len(lm.levels)), //targetSz: Lx层预期sst总字节数
+		fileSz:   make([]int64, len(lm.levels)), //fileSz: Lx层预期sst文件大小
 	}
+	//设置每层的期望值 （每层呈现递增趋势）
 	dbSize := lm.lastLevelHandler().getTotalSize()
 	for i := len(lm.levels) - 1; i > 0; i-- {
 		levelTargetSize := adjust(dbSize)
@@ -628,6 +659,63 @@ func (cs *compactStatus) compareAndAdd(_ thisAndNextLevelRLocked, cd compactDef)
 		cs.tables[t.fid] = struct{}{}
 	}
 	return true
+}
+
+func (cs *compactStatus) delete(cd compactDef) {
+	cs.Lock()
+	defer cs.Unlock()
+
+	tl := cd.thisLevel.levelNum
+
+	thisLevel := cs.levels[cd.thisLevel.levelNum]
+	nextLevel := cs.levels[cd.nextLevel.levelNum]
+
+	thisLevel.delSize -= cd.thisSize
+	found := thisLevel.remove(cd.thisRange)
+
+	if cd.thisLevel != cd.nextLevel && !cd.nextRange.isEmpty() {
+		found = nextLevel.remove(cd.nextRange) && found
+	}
+
+	if !found {
+		this := cd.thisRange
+		next := cd.nextRange
+		fmt.Printf("Looking for: %s in this level %d.\n", this, tl)
+		fmt.Printf("This Level:\n%s\n", thisLevel.debug())
+		fmt.Println()
+		fmt.Printf("Looking for: %s in next level %d.\n", next, cd.nextLevel.levelNum)
+		fmt.Printf("Next Level:\n%s\n", nextLevel.debug())
+		log.Fatal("KeyRange not found")
+	}
+
+	//将涉及的所有tables都解除压缩状态
+	for _, t := range append(cd.top, cd.bot...) {
+		_, ok := cs.tables[t.fid]
+		utils.CondPanic(!ok, fmt.Errorf("cs tables is nil"))
+		delete(cs.tables, t.fid)
+	}
+}
+
+func (lcs *levelCompactStatus) remove(dst keyRange) bool {
+	final := lcs.ranges[:0]
+	var found bool
+	for _, r := range lcs.ranges {
+		if !r.equals((dst)) {
+			final = append(final, r)
+		} else {
+			found = true
+		}
+	}
+	lcs.ranges = final
+	return found
+}
+
+func (lcs *levelCompactStatus) debug() string {
+	var b bytes.Buffer
+	for _, r := range lcs.ranges {
+		b.WriteString(r.String())
+	}
+	return b.String()
 }
 
 // 判断当前level的压缩计划是否与进行中压缩冲突
