@@ -506,7 +506,7 @@ func (lm *levelManager) runCompactDef(id, l int, cd compactDef) (err error) {
 	if len(cd.t.fileSz) == 0 {
 		return errors.New("Filesizes cannot be zero. Targets are not set")
 	}
-	timeStart := time.Now()
+	//timeStart := time.Now()
 
 	thisLevel := cd.thisLevel
 	nextLevel := cd.nextLevel
