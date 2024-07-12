@@ -506,7 +506,7 @@ func (lm *levelManager) runCompactDef(id, l int, cd compactDef) (err error) {
 	if len(cd.t.fileSz) == 0 {
 		return errors.New("Filesizes cannot be zero. Targets are not set")
 	}
-	//timeStart := time.Now()
+	timeStart := time.Now()
 
 	thisLevel := cd.thisLevel
 	nextLevel := cd.nextLevel
@@ -515,12 +515,72 @@ func (lm *levelManager) runCompactDef(id, l int, cd compactDef) (err error) {
 	if thisLevel == nextLevel {
 		//l02l0,lmax2lmax 不进行处理
 	} else {
-
+		lm.addSplits(&cd)
 	}
 	if len(cd.splits) == 0 {
 		cd.splits = append(cd.splits, keyRange{})
 	}
+
+	newTables,decr,err := 
+
 	return nil
+}
+
+func(lm *levelManager)compactBuildTables(level int,cd compactDef)([]*table,func() error,error){
+	topTables := cd.top
+	botTables := cd.bot 
+	iterOpt := &utils.Options{
+		IsAsc: true,
+	}
+
+	newIterator := func() []utils.Iterator{
+		var iter []utils.Iterator
+		switch{
+		case level == 0:
+			iters = append(iters,iteratorReversed(topTables,iterOpt)...)
+		case len(topTables) > 0:
+			iters = []utils.Iterator{topTables[0].NewTableIterator(iterOpt)}
+		}
+		return append(iters,)
+	}
+}
+
+func iteratorReversed(ts []*table,opt *utils.Options)[]utils.Iterator{
+	out := make([]utils.Iterator,0,len(ts))
+	for i:= len(ts)-1;i>=0;i--{
+		out = append(out, ts[i].NewTableIterator(opt))
+	}
+	return out 
+}
+
+
+func (lm *levelManager) addSplits(cd *compactDef){
+	cd.splits = cd.splits[:0]
+
+	width := int(math.Ceil(float64(len(cd.bot))/5.0))
+	if(width < 3){
+		width = 3
+	}
+	skr := cd.thisRange
+	skr.extend(cd.nextRange)
+
+	addRange := func(right []byte){
+		skr.right = utils.Copy(right)
+		cd.splits = append(cd.splits, skr)
+		skr.left = skr.right
+	}
+
+	for i,t := range cd.bot{
+		if i == len(cd.bot)-1{
+			addRange([]byte{})
+			return
+		}
+		if i%width == width -1{
+			//设置最大值为右区间
+			right := utils.KeyWithTime(utils.ParseKey(t.sst.GetMaxKey()),math.MaxUint64)
+			addRange(right)
+		}
+	}
 }
 
 // 获取tableList的keyRange,即[minKey,maxKey]
